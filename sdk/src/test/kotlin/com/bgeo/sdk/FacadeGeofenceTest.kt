@@ -5,6 +5,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -143,6 +144,24 @@ class FacadeGeofenceTest {
         val exists = BackgroundGeolocation.geofenceExists("home")
         assertTrue(exists)
         assertEquals(listOf("home"), engine.geofenceExistsIdentifiers)
+    }
+
+    @Test
+    fun `geofenceExists returns false when the engine says false`() = runTest {
+        engine.stubbedGeofenceExists = FakeEngine.Outcome.success(JSONObject().put("exists", false))
+        assertFalse(BackgroundGeolocation.geofenceExists("home"))
+    }
+
+    @Test
+    fun `geofenceExists returns false when the exists key is absent`() = runTest {
+        engine.stubbedGeofenceExists = FakeEngine.Outcome.success(JSONObject())
+        assertFalse(BackgroundGeolocation.geofenceExists("home"))
+    }
+
+    @Test
+    fun `geofenceExists returns false when the exists key is mistyped`() = runTest {
+        engine.stubbedGeofenceExists = FakeEngine.Outcome.success(JSONObject().put("exists", "yes"))
+        assertFalse(BackgroundGeolocation.geofenceExists("home"))
     }
 
     // ---- onGeofence ---------------------------------------------------------

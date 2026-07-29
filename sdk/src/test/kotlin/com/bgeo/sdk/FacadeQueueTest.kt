@@ -180,6 +180,18 @@ class FacadeQueueTest {
         assertEquals("native", entries.first().src)
     }
 
+    @Test
+    fun `getLog skips a malformed row rather than failing the call`() = runTest {
+        val malformed = JSONObject().put("ts", "2026-01-01T00:00:00.000Z") // missing level/src/event
+        engine.stubbedNewestLogs = listOf(
+            JSONObject().put("ts", "2026-01-01T00:00:00.000Z").put("level", 3).put("src", "native").put("event", "app"),
+            malformed,
+        )
+        val entries = BackgroundGeolocation.getLog()
+        assertEquals(1, entries.size)
+        assertEquals("native", entries.first().src)
+    }
+
     // ---- destroyLog -----------------------------------------------------------
 
     @Test
