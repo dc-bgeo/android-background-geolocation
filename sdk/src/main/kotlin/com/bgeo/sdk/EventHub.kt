@@ -2,8 +2,10 @@ package com.bgeo.sdk
 
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.buffer
 import kotlinx.coroutines.flow.callbackFlow
 import org.json.JSONObject
 
@@ -130,17 +132,30 @@ internal class EventHub {
     /**
      * An event-based view over [subscribe] with the same buffering/latching
      * contract, but NOT the same backpressure contract: this delivers via
-     * `trySend`, which DROPS the event if the channel's buffer is full,
-     * whereas [subscribe]'s handler runs inline on the emitting thread and so
-     * blocks the emitter until it returns. A slow collector loses events
-     * under [flow]; a slow handler passed to [subscribe] instead stalls
+     * `trySend` into an UNLIMITED-capacity channel (`.buffer(Channel.
+     * UNLIMITED)` below), whereas [subscribe]'s handler runs inline on the
+     * emitting thread and so blocks the emitter until it returns. A slow
+     * collector therefore never loses an event under [flow] — the backlog
+     * just grows — while a slow handler passed to [subscribe] instead stalls
      * whichever engine thread is emitting. Cancelling the collecting
-     * coroutine unsubscribes (`awaitClose` runs the removal).
+     * coroutine unsubscribes (`awaitClose` runs the removal), but does NOT
+     * happen on its own: [removeAll] clears the subscriber list without
+     * touching an already-running collector's channel, so that collector is
+     * left suspended forever with nothing left to receive.
+     *
+     * The unlimited buffer specifically closes a launch-time gap: a process
+     * restart (boot/geofence broadcast) can flush up to 64 buffered events
+     * into this channel the instant a subscriber attaches, before that
+     * subscriber's coroutine is even scheduled to start draining it. A
+     * default-capacity channel (`Channel.BUFFERED` = 64, exactly the
+     * pre-subscription buffer's own cap) has zero slack left for whatever
+     * arrives next — the very first live event after that flush would be
+     * silently dropped.
      */
     fun flow(name: String): Flow<JSONObject> = callbackFlow {
         val subscription = subscribe(name) { trySend(it) }
         awaitClose { subscription.remove() }
-    }
+    }.buffer(Channel.UNLIMITED)
 
     /**
      * Detaches every current subscriber, but deliberately does NOT touch the
@@ -149,6 +164,10 @@ internal class EventHub {
      * see [receive]), so clearing them here would let an app that calls this
      * before its first `subscribe`/`flow` for a name discard that name's
      * launch-time buffer for good.
+     *
+     * Also does NOT close any `callbackFlow` channel a live [flow] collector
+     * is reading from — see [flow]'s doc. A caller that wants to stop a
+     * `Flow` collection must cancel that collector's own coroutine/scope.
      */
     fun removeAll() {
         synchronized(lock) { subscribers.clear() }

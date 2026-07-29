@@ -1,6 +1,8 @@
 package com.bgeo.sdk
 
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -121,5 +123,65 @@ class BGeoExceptionTest {
     fun `ActivityType from falls back to UNKNOWN for unrecognised or null wire values`() {
         assertEquals(ActivityType.UNKNOWN, ActivityType.from("teleporting"))
         assertEquals(ActivityType.UNKNOWN, ActivityType.from(null))
+    }
+
+    // ---- fromLocationErrorEvent (C1: `locationerror` is unreachable) -------
+    //
+    // The engine has exactly two `locationerror` emit sites
+    // (BGGeoEngine.kt:1122, :1160); both build the payload from a Kotlin
+    // `String` (the license-gate check literally puts its `String?
+    // licenseError`, and the watchPosition tick forwards `BGGeoCallback.
+    // error(code: String, message: String)`'s own `code` param) - so both
+    // shapes below are JSON STRINGS, never NUMBERS. Unlike the iOS twin,
+    // there is no NUMBER-coded shape to handle on Android.
+
+    @Test
+    fun `decodes the license-gate site's shape (startWatch on an unlicensed build)`() {
+        val json = JSONObject().put("code", "LICENSE_EXPIRED").put("message", "Tracking is not licensed")
+        val error = BGeoException.fromLocationErrorEvent(json)
+        assertTrue(error is BGeoException.LicenseExpired)
+        assertEquals("LICENSE_EXPIRED", error!!.code)
+        assertEquals("Tracking is not licensed", error.message)
+    }
+
+    @Test
+    fun `decodes the watchTick site's shape (a failing getCurrentPosition forwarded verbatim)`() {
+        val json = JSONObject().put("code", "408").put("message", "Location request timed out")
+        val error = BGeoException.fromLocationErrorEvent(json)
+        assertTrue(error is BGeoException.Unknown)
+        assertEquals("408", error!!.code)
+        assertEquals("Location request timed out", error.message)
+    }
+
+    @Test
+    fun `an unrecognised code still decodes, as Unknown, rather than being dropped`() {
+        val json = JSONObject().put("code", "1").put("message", "Location permission denied")
+        val error = BGeoException.fromLocationErrorEvent(json)
+        assertTrue(error is BGeoException.Unknown)
+        assertEquals("1", error!!.code)
+    }
+
+    @Test
+    fun `a payload missing code is dropped rather than crashing`() {
+        val json = JSONObject().put("message", "Tracking is not licensed")
+        assertNull(BGeoException.fromLocationErrorEvent(json))
+    }
+
+    @Test
+    fun `a payload missing message is dropped rather than crashing`() {
+        val json = JSONObject().put("code", "LICENSE_MISSING")
+        assertNull(BGeoException.fromLocationErrorEvent(json))
+    }
+
+    @Test
+    fun `a JSON null code is dropped rather than crashing`() {
+        val json = JSONObject().put("code", JSONObject.NULL).put("message", "boom")
+        assertNull(BGeoException.fromLocationErrorEvent(json))
+    }
+
+    @Test
+    fun `an empty string code is dropped rather than crashing`() {
+        val json = JSONObject().put("code", "").put("message", "boom")
+        assertNull(BGeoException.fromLocationErrorEvent(json))
     }
 }

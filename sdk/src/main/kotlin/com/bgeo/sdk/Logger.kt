@@ -1,5 +1,7 @@
 package com.bgeo.sdk
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
 /**
@@ -29,19 +31,25 @@ class Logger internal constructor(private val engine: Engine) {
 
 val BackgroundGeolocation.logger: Logger get() = Logger(engine)
 
-/** Newest-first persisted log entries, capped to `1...5000` (`react-native/src/index.ts:311-314`). */
-suspend fun BackgroundGeolocation.getLog(limit: Int = 500): List<LogEntry> =
-    engine.newestLogs(limit.coerceIn(1, 5000)).mapNotNull(LogEntry::from)
+// The three suspend members below hop to Dispatchers.IO for the same reason
+// as Queue.kt's: the engine resolves these synchronously on the calling
+// thread, backed by direct SQLite (BGGeoDb.kt) - suspend alone doesn't make
+// that main-safe.
 
-suspend fun BackgroundGeolocation.destroyLog(): Int = engine.deleteAllLogs()
+/** Newest-first persisted log entries, capped to `1...5000` (`react-native/src/index.ts:311-314`). */
+suspend fun BackgroundGeolocation.getLog(limit: Int = 500): List<LogEntry> = withContext(Dispatchers.IO) {
+    engine.newestLogs(limit.coerceIn(1, 5000)).mapNotNull(LogEntry::from)
+}
+
+suspend fun BackgroundGeolocation.destroyLog(): Int = withContext(Dispatchers.IO) { engine.deleteAllLogs() }
 
 /**
  * Reads [Engine.pendingLogCount] BEFORE [Engine.flushLogs] and returns that
  * count — draining first would always report zero
  * (`react-native/src/index.ts:327-330`).
  */
-suspend fun BackgroundGeolocation.uploadLog(): Int {
+suspend fun BackgroundGeolocation.uploadLog(): Int = withContext(Dispatchers.IO) {
     val pending = engine.pendingLogCount()
     engine.flushLogs()
-    return pending
+    pending
 }

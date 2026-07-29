@@ -1,6 +1,7 @@
 plugins {
     id("com.android.library") version "8.13.0"
     id("org.jetbrains.kotlin.android") version "2.1.20"
+    `maven-publish`
 }
 
 group = "dev.bgeo"
@@ -42,15 +43,43 @@ android {
         // reverts to the silently-broken stub. See JsonRuntimeTest.
         unitTests.isReturnDefaultValues = true
     }
+
+    publishing {
+        // Pin now, before anything is published, so a later phase-2
+        // maven-publish setup can't default to `dev.bgeo:sdk` (group +
+        // this module's Gradle path/name) — the plan's coordinate is
+        // `dev.bgeo:background-geolocation`, set explicitly below.
+        singleVariant("release")
+    }
 }
 
 kotlin { jvmToolchain(17) }
+
+afterEvaluate {
+    // AGP registers the "release" software component lazily; this block must
+    // run after project evaluation for `components["release"]` to exist.
+    publishing {
+        publications {
+            create<MavenPublication>("release") {
+                from(components["release"])
+                groupId = "dev.bgeo"
+                artifactId = "background-geolocation"
+                version = "0.1.0"
+            }
+        }
+    }
+}
 
 dependencies {
     // api: the engine's types appear in this facade's own surface, and consumers
     // must resolve it transitively.
     api("dev.bgeo:bgeo-android:0.13.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    // api, not implementation: Flow appears in this facade's own public
+    // surface (BackgroundGeolocation.locations and its seven siblings,
+    // Geofences.kt's geofenceEvents/geofenceChanges) - implementation would
+    // keep kotlinx-coroutines off a consumer's compile classpath, breaking
+    // even the README's own quickstart. Same reasoning as activity below.
+    api("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.lifecycle:lifecycle-process:2.8.4")
     // api: ActivityResultCaller appears in PermissionRequester's public constructor,
     // so consumers must resolve it transitively, same rule as bgeo-android above.

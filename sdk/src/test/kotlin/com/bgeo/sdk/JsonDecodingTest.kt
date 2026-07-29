@@ -97,4 +97,34 @@ class JsonDecodingTest {
     fun `anyOrNull returns null for a JSON null rather than the JSONObject NULL singleton`() {
         assertNull(JSONObject().put("data", JSONObject.NULL).anyOrNull("data"))
     }
+
+    // ---- stringOrEmpty (C2: an empty string is a real value, not "absent") -
+
+    @Test
+    fun `stringOrEmpty returns the value when present and non-empty`() {
+        assertEquals("offline", JSONObject().put("responseText", "offline").stringOrEmpty("responseText"))
+    }
+
+    @Test
+    fun `stringOrEmpty returns an empty string as-is rather than treating it as absent`() {
+        // The whole point of this helper over stringOrNull: "" is a real,
+        // meaningful value here (204 No Content; a message-less network
+        // error), not a signal to drop the record.
+        assertEquals("", JSONObject().put("responseText", "").stringOrEmpty("responseText"))
+    }
+
+    @Test
+    fun `stringOrEmpty falls back to empty string when the key is absent`() {
+        assertEquals("", JSONObject().stringOrEmpty("responseText"))
+    }
+
+    @Test
+    fun `stringOrEmpty falls back to empty string for a JSON null`() {
+        assertEquals("", JSONObject().put("responseText", JSONObject.NULL).stringOrEmpty("responseText"))
+    }
+
+    @Test
+    fun `stringOrEmpty falls back to empty string for a mistyped value`() {
+        assertEquals("", JSONObject().put("responseText", 42).stringOrEmpty("responseText"))
+    }
 }

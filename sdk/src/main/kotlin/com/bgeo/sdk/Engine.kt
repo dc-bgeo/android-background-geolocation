@@ -28,7 +28,6 @@ internal interface Engine {
     fun licenseErrorCode(): String?
     fun applyConfig(map: JSONObject?)
     fun stateMap(): JSONObject
-    fun isEnabled(): Boolean
     fun startTracking()
     fun stopTracking()
     fun changePace(isMoving: Boolean): Boolean
@@ -46,7 +45,6 @@ internal interface Engine {
     fun numericStatus(): Int
     fun providerState(): JSONObject
     fun emitProviderChange()
-    fun locationServicesEnabled(): Boolean
     fun isPowerSaveMode(): Boolean
 
     fun sync(callback: BGGeoCallback)
@@ -90,7 +88,6 @@ internal object LiveEngine : Engine {
     override fun licenseErrorCode(): String? = BGGeoEngine.licenseErrorCode()
     override fun applyConfig(map: JSONObject?) = BGGeoEngine.applyConfig(map)
     override fun stateMap(): JSONObject = BGGeoEngine.stateMap()
-    override fun isEnabled(): Boolean = BGGeoEngine.isEnabled()
     override fun startTracking() = BGGeoEngine.startTracking()
     override fun stopTracking() = BGGeoEngine.stopTracking()
     override fun changePace(isMoving: Boolean): Boolean = BGGeoEngine.changePace(isMoving)
@@ -109,7 +106,6 @@ internal object LiveEngine : Engine {
     override fun numericStatus(): Int = BGGeoEngine.numericStatus()
     override fun providerState(): JSONObject = BGGeoEngine.providerState()
     override fun emitProviderChange() = BGGeoEngine.emitProviderChange()
-    override fun locationServicesEnabled(): Boolean = BGGeoEngine.locationServicesEnabled()
     override fun isPowerSaveMode(): Boolean = BGGeoEngine.isPowerSaveMode()
 
     override fun sync(callback: BGGeoCallback) = BGGeoEngine.sync(callback)

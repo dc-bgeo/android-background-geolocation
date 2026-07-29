@@ -193,6 +193,16 @@ object BackgroundGeolocation {
     // Decoding rule, same as the callback-style subscriptions below: a
     // payload that fails to decode is DROPPED, never crashed, never
     // delivered half-built.
+    //
+    // Delivery contract: an `onX` callback (below) is invoked inline on
+    // whatever thread the engine emitted from and is never dropped — but a
+    // slow handler stalls that engine thread until it returns. A `Flow`
+    // property is the opposite trade: it buffers without limit
+    // (`EventHub.flow`), so a slow collector never blocks the emitter and
+    // never silently loses an event either, but an indefinitely slow or
+    // stalled collector lets that buffer grow without bound. Prefer a `Flow`
+    // when you want the emitting thread left alone; prefer `onX` when you
+    // want backpressure instead of unbounded memory growth.
 
     val locations: Flow<Location> get() = hub.flow("location").mapNotNull(Location::from)
     val motionChanges: Flow<MotionChangeEvent> get() = hub.flow("motionchange").mapNotNull(MotionChangeEvent::from)
@@ -202,6 +212,14 @@ object BackgroundGeolocation {
     val connectivityChanges: Flow<ConnectivityChangeEvent> get() = hub.flow("connectivitychange").mapNotNull(ConnectivityChangeEvent::from)
     val powerSaveChanges: Flow<Boolean> get() = hub.flow("powersavechange").mapNotNull { it.boolOrNull("isPowerSaveMode") }
     val authorizationEvents: Flow<JSONObject> get() = hub.flow("authorization")
+
+    /**
+     * Every `locationerror` the engine emits — a failing [watchPosition] tick,
+     * or [watchPosition] itself called on an unlicensed build (both sites
+     * short-circuit with this event, no callback and no throw). Without a
+     * subscriber here, a failing watch fails in total silence.
+     */
+    val locationErrors: Flow<BGeoException> get() = hub.flow("locationerror").mapNotNull(BGeoException::fromLocationErrorEvent)
 
     // ---- callback-style subscriptions -------------------------------------
 
@@ -230,6 +248,20 @@ object BackgroundGeolocation {
     fun onAuthorization(handler: (JSONObject) -> Unit): Subscription =
         hub.subscribe("authorization", handler)
 
+    /** See [locationErrors] — the callback-style twin of the same event. */
+    fun onLocationError(handler: (BGeoException) -> Unit): Subscription =
+        hub.subscribe("locationerror") { json -> BGeoException.fromLocationErrorEvent(json)?.let(handler) }
+
+    /**
+     * Detaches every subscriber registered via [onLocation] and its siblings,
+     * including a [locationErrors]/[locations]-style `Flow`'s subscription —
+     * but NOT the `Flow`'s collector itself: each `Flow` access mints its own
+     * `callbackFlow`-backed channel ([EventHub.flow]), and this only clears
+     * [EventHub]'s subscriber list. A collector already running when this is
+     * called stays suspended forever, receiving nothing further, until its
+     * own coroutine/scope is cancelled — cancel that collection directly
+     * rather than relying on this call to stop it.
+     */
     fun removeListeners() {
         hub.removeAll()
     }

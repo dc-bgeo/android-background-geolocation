@@ -257,6 +257,28 @@ class ModelDecodingTest {
     }
 
     @Test
+    fun `http event decodes an empty responseText rather than dropping the whole event`() {
+        // C2: the engine emits "" for a body-less response (204 No Content)
+        // and for a message-less network error - both ordinary, successful
+        // decodes, not malformed payloads. stringOrNull would have treated
+        // "" the same as absent and dropped the whole event here.
+        val json = JSONObject().put("success", true).put("status", 204).put("responseText", "")
+        val event = HttpEvent.from(json)
+        assertNotNull("an empty responseText must not drop the whole http event", event)
+        assertEquals(true, event!!.success)
+        assertEquals(204, event.status)
+        assertEquals("", event.responseText)
+    }
+
+    @Test
+    fun `http event decodes when the responseText key is absent entirely`() {
+        val json = JSONObject().put("success", false).put("status", 0)
+        val event = HttpEvent.from(json)
+        assertNotNull(event)
+        assertEquals("", event!!.responseText)
+    }
+
+    @Test
     fun `connectivity change event decodes`() {
         val event = ConnectivityChangeEvent.from(JSONObject().put("connected", true))
         assertNotNull(event)

@@ -9,7 +9,10 @@ the same vocabulary.
 
 ## Installation
 
-Gradle coordinate: `dev.bgeo:sdk:0.1.0` (group `dev.bgeo`, module `sdk`).
+Gradle coordinate: `dev.bgeo:background-geolocation:0.1.0` (group `dev.bgeo`,
+artifact `background-geolocation` — the Gradle module is `:sdk`, but the
+publish coordinate is set explicitly in `sdk/build.gradle.kts` rather than
+defaulting to the module name).
 
 This module isn't published anywhere yet — Maven Central packaging lands in
 phase 2. For now, the engine AAR it depends on is vendored as a local Maven

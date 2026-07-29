@@ -5,6 +5,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Before
@@ -25,6 +27,23 @@ class FacadeQueueTest {
     fun tearDown() {
         BackgroundGeolocation.engine = LiveEngine
         BackgroundGeolocation.hub = EventHub()
+    }
+
+    /**
+     * I3: every member under test in this file resolves the engine's
+     * callback synchronously (`FakeEngine.record` runs on whatever thread
+     * actually invoked the override), so this proves the facade hopped onto
+     * `Dispatchers.IO` rather than running on the test's calling thread —
+     * without a real dispatcher hop, `recorded` would equal `callingThread`.
+     */
+    private fun assertHoppedOffCallingThread(method: String, callingThread: Thread) {
+        val recorded = engine.callThreads[method]
+        assertNotNull("expected FakeEngine.$method to have been called", recorded)
+        assertNotEquals(
+            "expected a Dispatchers.IO hop off ${callingThread.name} for $method, but it ran on the same thread",
+            callingThread,
+            recorded,
+        )
     }
 
     private fun sampleLocationJson(uuid: String = "sample-uuid"): JSONObject = JSONObject().apply {
@@ -250,5 +269,84 @@ class FacadeQueueTest {
     fun `logger encodes data as a JSON string`() {
         BackgroundGeolocation.logger.info("with data", data = JSONObject().put("a", 1))
         assertEquals("{\"a\":1}", engine.logCalls.last().data)
+    }
+
+    // ---- I3: every suspend member here hops off the calling thread --------
+    //
+    // Reproduces the ANR risk directly: `lifecycleScope.launch { sync() }`
+    // running on `Dispatchers.Main.immediate` must not read/write the
+    // (synchronous, SQLite-backed) queue on the UI thread.
+
+    @Test
+    fun `sync resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        engine.stubbedGetLocations = FakeEngine.Outcome.success(locationsEnvelope())
+        BackgroundGeolocation.sync()
+        assertHoppedOffCallingThread("sync", callingThread)
+    }
+
+    @Test
+    fun `getLocations resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        engine.stubbedGetLocations = FakeEngine.Outcome.success(locationsEnvelope())
+        BackgroundGeolocation.getLocations()
+        assertHoppedOffCallingThread("getLocations", callingThread)
+    }
+
+    @Test
+    fun `destroyLocations resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.destroyLocations()
+        assertHoppedOffCallingThread("destroyLocations", callingThread)
+    }
+
+    @Test
+    fun `getCount resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.getCount()
+        assertHoppedOffCallingThread("pendingCount", callingThread)
+    }
+
+    @Test
+    fun `destroyLocation resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.destroyLocation("uuid")
+        assertHoppedOffCallingThread("destroyLocation", callingThread)
+    }
+
+    @Test
+    fun `insertLocation resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.insertLocation(JSONObject().put("uuid", "x"))
+        assertHoppedOffCallingThread("insertLocation", callingThread)
+    }
+
+    @Test
+    fun `getAuthState resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.getAuthState()
+        assertHoppedOffCallingThread("authStateMap", callingThread)
+    }
+
+    @Test
+    fun `getLog resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.getLog()
+        assertHoppedOffCallingThread("newestLogs", callingThread)
+    }
+
+    @Test
+    fun `destroyLog resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.destroyLog()
+        assertHoppedOffCallingThread("deleteAllLogs", callingThread)
+    }
+
+    @Test
+    fun `uploadLog resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.uploadLog()
+        assertHoppedOffCallingThread("pendingLogCount", callingThread)
+        assertHoppedOffCallingThread("flushLogs", callingThread)
     }
 }

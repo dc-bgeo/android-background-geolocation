@@ -6,6 +6,8 @@ import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -196,5 +198,57 @@ class FacadeGeofenceTest {
         )
         assertEquals(listOf("home"), received?.on?.map { it.identifier })
         assertEquals(listOf("office"), received?.off?.map { it.identifier })
+    }
+
+    // ---- I3: every suspend member here hops off the calling thread --------
+    //
+    // GeofenceStore persists via direct SQLite (BGGeoDb.kt's `geofences`
+    // table), the same main-safety concern as Queue.kt/Logger.kt.
+
+    private fun assertHoppedOffCallingThread(method: String, callingThread: Thread) {
+        val recorded = engine.callThreads[method]
+        assertNotNull("expected FakeEngine.$method to have been called", recorded)
+        assertNotEquals(
+            "expected a Dispatchers.IO hop off ${callingThread.name} for $method, but it ran on the same thread",
+            callingThread,
+            recorded,
+        )
+    }
+
+    @Test
+    fun `addGeofences resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.addGeofences(listOf(home))
+        assertHoppedOffCallingThread("addGeofences", callingThread)
+    }
+
+    @Test
+    fun `removeGeofence resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.removeGeofence("home")
+        assertHoppedOffCallingThread("removeGeofence", callingThread)
+    }
+
+    @Test
+    fun `removeGeofences resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        BackgroundGeolocation.removeGeofences()
+        assertHoppedOffCallingThread("removeGeofences", callingThread)
+    }
+
+    @Test
+    fun `getGeofences resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        engine.stubbedGetGeofences = FakeEngine.Outcome.success(JSONObject().put("geofences", JSONArray()))
+        BackgroundGeolocation.getGeofences()
+        assertHoppedOffCallingThread("getGeofences", callingThread)
+    }
+
+    @Test
+    fun `geofenceExists resolves off the calling thread`() = runTest {
+        val callingThread = Thread.currentThread()
+        engine.stubbedGeofenceExists = FakeEngine.Outcome.success(JSONObject().put("exists", true))
+        BackgroundGeolocation.geofenceExists("home")
+        assertHoppedOffCallingThread("geofenceExists", callingThread)
     }
 }

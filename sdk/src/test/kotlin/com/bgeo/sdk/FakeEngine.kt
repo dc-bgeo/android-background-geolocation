@@ -34,6 +34,19 @@ internal class FakeEngine : Engine {
         }
     }
 
+    /**
+     * Records the thread each instrumented call below landed on, keyed by
+     * method name — lets a test prove a `suspend` facade member actually
+     * hopped off the calling thread onto `Dispatchers.IO` (see `Queue.kt`/
+     * `Logger.kt`/`Geofences.kt`), rather than merely trusting the source.
+     * Only wired into the methods those facade functions call through to;
+     * see each `record(...)` call site.
+     */
+    val callThreads = java.util.concurrent.ConcurrentHashMap<String, Thread>()
+    private fun record(name: String) {
+        callThreads[name] = Thread.currentThread()
+    }
+
     // ---- eventEmitter ---------------------------------------------------
 
     override var eventEmitter: ((String, JSONObject) -> Unit)? = null
@@ -65,9 +78,6 @@ internal class FakeEngine : Engine {
 
     var stubbedStateMap: JSONObject = JSONObject()
     override fun stateMap(): JSONObject = stubbedStateMap
-
-    var stubbedIsEnabled = false
-    override fun isEnabled(): Boolean = stubbedIsEnabled
 
     var startTrackingCallCount = 0
     override fun startTracking() {
@@ -140,9 +150,6 @@ internal class FakeEngine : Engine {
         emitProviderChangeCallCount++
     }
 
-    var stubbedLocationServicesEnabled = true
-    override fun locationServicesEnabled(): Boolean = stubbedLocationServicesEnabled
-
     var stubbedIsPowerSaveMode = false
     override fun isPowerSaveMode(): Boolean = stubbedIsPowerSaveMode
 
@@ -153,6 +160,7 @@ internal class FakeEngine : Engine {
     /** Fires DURING `sync()`, before the callback resolves — lets a test mutate [stubbedGetLocations] to prove a caller snapshotted the queue before draining it, not after. */
     var onSync: (() -> Unit)? = null
     override fun sync(callback: BGGeoCallback) {
+        record("sync")
         syncCallCount++
         onSync?.invoke()
         resolve(callback, stubbedSync)
@@ -160,20 +168,26 @@ internal class FakeEngine : Engine {
 
     var stubbedGetLocations: Outcome = Outcome.success()
     override fun getLocations(callback: BGGeoCallback) {
+        record("getLocations")
         resolve(callback, stubbedGetLocations)
     }
 
     var stubbedDestroyLocations: Outcome = Outcome.success()
     override fun destroyLocations(callback: BGGeoCallback) {
+        record("destroyLocations")
         resolve(callback, stubbedDestroyLocations)
     }
 
     var stubbedPendingCount = 0
-    override fun pendingCount(): Int = stubbedPendingCount
+    override fun pendingCount(): Int {
+        record("pendingCount")
+        return stubbedPendingCount
+    }
 
     var stubbedDestroyLocation = true
     val destroyLocationUuids = mutableListOf<String>()
     override fun destroyLocation(uuid: String): Boolean {
+        record("destroyLocation")
         destroyLocationUuids.add(uuid)
         return stubbedDestroyLocation
     }
@@ -181,32 +195,44 @@ internal class FakeEngine : Engine {
     val insertedLocations = mutableListOf<JSONObject>()
     var stubbedInsertLocation: Outcome = Outcome.success()
     override fun insertLocation(location: JSONObject, callback: BGGeoCallback) {
+        record("insertLocation")
         insertedLocations.add(location)
         resolve(callback, stubbedInsertLocation)
     }
 
     var stubbedAuthStateMap: JSONObject = JSONObject()
-    override fun authStateMap(): JSONObject = stubbedAuthStateMap
+    override fun authStateMap(): JSONObject {
+        record("authStateMap")
+        return stubbedAuthStateMap
+    }
 
     // ---- logger -------------------------------------------------------------
 
     var stubbedNewestLogs: List<JSONObject> = emptyList()
     val newestLogsLimits = mutableListOf<Int>()
     override fun newestLogs(limit: Int): List<JSONObject> {
+        record("newestLogs")
         newestLogsLimits.add(limit)
         return stubbedNewestLogs
     }
 
     var stubbedDeleteAllLogs = 0
-    override fun deleteAllLogs(): Int = stubbedDeleteAllLogs
+    override fun deleteAllLogs(): Int {
+        record("deleteAllLogs")
+        return stubbedDeleteAllLogs
+    }
 
     var stubbedPendingLogCount = 0
-    override fun pendingLogCount(): Int = stubbedPendingLogCount
+    override fun pendingLogCount(): Int {
+        record("pendingLogCount")
+        return stubbedPendingLogCount
+    }
 
     var flushLogsCallCount = 0
     /** Fires DURING `flushLogs()` — lets a test mutate [stubbedPendingLogCount] to prove a caller read the pending count before flushing, not after. */
     var onFlushLogs: (() -> Unit)? = null
     override fun flushLogs() {
+        record("flushLogs")
         flushLogsCallCount++
         onFlushLogs?.invoke()
     }
@@ -234,6 +260,7 @@ internal class FakeEngine : Engine {
     var stubbedAddGeofences: Outcome = Outcome.success()
     val addGeofencesCalls = mutableListOf<JSONArray?>()
     override fun addGeofences(geofences: JSONArray?, callback: BGGeoCallback) {
+        record("addGeofences")
         addGeofencesCalls.add(geofences)
         resolve(callback, stubbedAddGeofences)
     }
@@ -241,6 +268,7 @@ internal class FakeEngine : Engine {
     var stubbedRemoveGeofence: Outcome = Outcome.success()
     val removeGeofenceIdentifiers = mutableListOf<String>()
     override fun removeGeofence(identifier: String, callback: BGGeoCallback) {
+        record("removeGeofence")
         removeGeofenceIdentifiers.add(identifier)
         resolve(callback, stubbedRemoveGeofence)
     }
@@ -248,18 +276,21 @@ internal class FakeEngine : Engine {
     var stubbedRemoveGeofences: Outcome = Outcome.success()
     var removeGeofencesCallCount = 0
     override fun removeGeofences(callback: BGGeoCallback) {
+        record("removeGeofences")
         removeGeofencesCallCount++
         resolve(callback, stubbedRemoveGeofences)
     }
 
     var stubbedGetGeofences: Outcome = Outcome.success()
     override fun getGeofences(callback: BGGeoCallback) {
+        record("getGeofences")
         resolve(callback, stubbedGetGeofences)
     }
 
     var stubbedGeofenceExists: Outcome = Outcome.success()
     val geofenceExistsIdentifiers = mutableListOf<String>()
     override fun geofenceExists(identifier: String, callback: BGGeoCallback) {
+        record("geofenceExists")
         geofenceExistsIdentifiers.add(identifier)
         resolve(callback, stubbedGeofenceExists)
     }

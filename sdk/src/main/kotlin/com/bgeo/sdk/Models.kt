@@ -324,8 +324,10 @@ data class HttpEvent(
         fun from(json: JSONObject): HttpEvent? {
             val success = json.boolOrNull("success") ?: return null
             val status = json.intOrNull("status") ?: return null
-            val responseText = json.stringOrNull("responseText") ?: return null
-            return HttpEvent(success, status, responseText)
+            // stringOrEmpty, not stringOrNull: the engine emits "" for both a
+            // body-less response (204 No Content) and a message-less network
+            // error - a real, ordinary event, not a malformed payload to drop.
+            return HttpEvent(success, status, json.stringOrEmpty("responseText"))
         }
     }
 }

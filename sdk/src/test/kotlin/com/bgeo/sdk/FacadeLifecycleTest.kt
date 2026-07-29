@@ -2,11 +2,19 @@ package com.bgeo.sdk
 
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -313,6 +321,77 @@ class FacadeLifecycleTest {
         BackgroundGeolocation.onPowerSaveChange { received = it }
         engine.emit("powersavechange", JSONObject().put("isPowerSaveMode", true))
         assertEquals(true, received)
+    }
+
+    // ---- onLocationError / locationErrors (C1) -----------------------------
+    //
+    // Before this fix, a failing watchPosition (unlicensed build, or any
+    // failing tick) had no callback, no throw and no reachable event -
+    // `locationerror` had zero subscribers anywhere in the SDK.
+
+    @Test
+    fun `onLocationError decodes the license-gate shape`() {
+        var received: BGeoException? = null
+        BackgroundGeolocation.onLocationError { received = it }
+        engine.emit(
+            "locationerror",
+            JSONObject().put("code", "LICENSE_EXPIRED").put("message", "Tracking is not licensed"),
+        )
+        assertTrue(received is BGeoException.LicenseExpired)
+        assertEquals("LICENSE_EXPIRED", received?.code)
+    }
+
+    @Test
+    fun `onLocationError decodes the watchTick shape`() {
+        var received: BGeoException? = null
+        BackgroundGeolocation.onLocationError { received = it }
+        engine.emit(
+            "locationerror",
+            JSONObject().put("code", "408").put("message", "Location request timed out"),
+        )
+        assertTrue(received is BGeoException.Unknown)
+        assertEquals("408", received?.code)
+        assertEquals("Location request timed out", received?.message)
+    }
+
+    @Test
+    fun `an undecodable locationerror payload is dropped, not crashed`() {
+        var callCount = 0
+        BackgroundGeolocation.onLocationError { callCount++ }
+        engine.emit("locationerror", JSONObject().put("garbage", true))
+        assertEquals(0, callCount)
+    }
+
+    /**
+     * End to end: proves the event actually reaches a subscriber through
+     * [BackgroundGeolocation.locationErrors] rather than being dropped -
+     * the exact failure this finding exists to close (`locationerror` was
+     * previously unreachable from any public API, `hub`/`EventHub` being
+     * `internal`).
+     */
+    @Test
+    fun `locationErrors Flow delivers a decoded exception to a subscriber`() = runBlocking {
+        val received = LinkedBlockingQueue<BGeoException>()
+        val job = launch(Dispatchers.Default) {
+            BackgroundGeolocation.locationErrors.collect { received.add(it) }
+        }
+        val deadline = System.currentTimeMillis() + 2_000
+        while (BackgroundGeolocation.hub.subscriberCount("locationerror") == 0) {
+            if (System.currentTimeMillis() > deadline) error("timed out waiting for a locationerror subscriber")
+            Thread.sleep(5)
+        }
+
+        engine.emit(
+            "locationerror",
+            JSONObject().put("code", "LICENSE_EXPIRED").put("message", "Tracking is not licensed"),
+        )
+
+        val error = received.poll(2, TimeUnit.SECONDS)
+        assertTrue(
+            "the locationerror event must reach a Flow subscriber, not be dropped in total silence",
+            error is BGeoException.LicenseExpired,
+        )
+        job.cancelAndJoin()
     }
 
     @Test

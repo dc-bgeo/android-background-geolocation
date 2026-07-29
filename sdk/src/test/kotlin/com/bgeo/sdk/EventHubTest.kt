@@ -1,5 +1,6 @@
 package com.bgeo.sdk
 
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -226,6 +227,46 @@ class EventHubTest {
 
         assertEquals(0, hub.subscriberCount("location"))
         engine.emit("location", JSONObject())
+    }
+
+    // ---- I2: the flow's channel must not silently drop a live event --------
+    //
+    // Before `.buffer(Channel.UNLIMITED)`, `flow()`'s callbackFlow used the
+    // default capacity (`Channel.BUFFERED` = 64) - exactly the pre-
+    // subscription buffer's own cap. A process restart with a full buffer
+    // flushes all 64 into the channel the instant a subscriber attaches; the
+    // very next live event then finds the channel already full and is
+    // dropped by `trySend`, with no signal to anyone.
+
+    @Test
+    fun `flow does not drop events once more than sixty-four are queued ahead of a slow collector`() = runBlocking {
+        val engine = FakeEngine()
+        val hub = EventHub()
+        hub.attach(engine)
+
+        val received = LinkedBlockingQueue<Int>()
+        // Blocks the collector immediately after it picks up the FIRST item,
+        // so every subsequent emit sits in the channel undelivered - the
+        // exact condition that overflowed the old 64-capacity channel.
+        val releaseCollector = CountDownLatch(1)
+        val job = launch(Dispatchers.Default) {
+            hub.flow("location").collect {
+                if (it.getInt("i") == 0) releaseCollector.await()
+                received.add(it.getInt("i"))
+            }
+        }
+        hub.awaitSubscriber("location")
+
+        // 100 live events, all emitted while the collector is blocked on the
+        // very first one - far past the old 64-capacity cap.
+        for (i in 0 until 100) engine.emit("location", JSONObject().put("i", i))
+
+        releaseCollector.countDown()
+
+        for (i in 0 until 100) {
+            assertEquals(i, received.poll(2, TimeUnit.SECONDS))
+        }
+        job.cancelAndJoin()
     }
 
     @Test

@@ -281,6 +281,13 @@ data class Config(
          * device unlink (empty strings, since Dart's `Config` cannot express
          * a true clear — see `flutter/lib/src/config.dart` `Config.toMap()`).
          *
+         * **Every other property ignores this sentinel.** [toJson] only
+         * special-cases the six keys named above; setting e.g.
+         * `Config(method = Config.CLEAR_STRING)` does NOT clear `method` —
+         * every unwired property serialises as whatever was passed in,
+         * unchecked, so the literal sentinel string leaks to the engine as an
+         * ordinary value.
+         *
          * Example: `Config(url = Config.CLEAR_STRING)` clears the upload `url`.
          */
         const val CLEAR_STRING = "\u0000__BGEO_CLEAR__"

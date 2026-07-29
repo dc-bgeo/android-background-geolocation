@@ -41,6 +41,21 @@ internal fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) nu
 internal fun JSONObject.objectOrNull(key: String): JSONObject? = if (isNull(key)) null else optJSONObject(key)
 
 /**
+ * String value for a REQUIRED text field where an empty string is a real,
+ * meaningful value the engine legitimately emits - not a sign the field is
+ * absent. Unlike [stringOrNull] (which treats `""` the same as a missing
+ * key, so a decoder using it as `?: return null` drops the WHOLE record),
+ * this never fails: a missing key or a non-`String` value both fall back to
+ * `""` rather than aborting the decode.
+ *
+ * Exists for `HttpEvent.responseText`: the engine emits `""` for both a
+ * body-less response (e.g. 204 No Content) and a message-less network
+ * error, and either case is an ordinary, successful `http` event that must
+ * still reach subscribers - not a malformed payload to drop.
+ */
+internal fun JSONObject.stringOrEmpty(key: String): String = (opt(key) as? String) ?: ""
+
+/**
  * Raw value for a key whose shape isn't known ahead of time (e.g. `LogEntry.
  * data`, which the engine/`LiveEngine` may hand back as either a parsed
  * `JSONObject` or a plain `String` — see `Engine.kt`'s `logRowToJson`).
