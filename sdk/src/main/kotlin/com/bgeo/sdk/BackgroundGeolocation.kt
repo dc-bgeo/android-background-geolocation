@@ -159,6 +159,14 @@ object BackgroundGeolocation {
 
     // ---- provider / power -------------------------------------------------
 
+    /**
+     * Runs the escalating permission flow (`PermissionPlan`'s FINE/COARSE ->
+     * BACKGROUND -> ACTIVITY_RECOGNITION order) through [requester]. On iOS
+     * this lives inside the engine; on Android it needs an `Activity`, which
+     * [requester] supplies.
+     */
+    suspend fun requestPermission(requester: PermissionRequester): AuthorizationStatus = requester.request()
+
     suspend fun getProviderState(): ProviderState = ProviderState.from(engine.providerState())
 
     /** Current OS battery-saver state. */

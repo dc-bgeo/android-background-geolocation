@@ -49,6 +49,8 @@ dependencies {
     api("dev.bgeo:bgeo-android:0.13.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("androidx.lifecycle:lifecycle-process:2.8.4")
+    // ActivityResultCaller / ActivityResultContracts.RequestMultiplePermissions for PermissionRequester.
+    implementation("androidx.activity:activity-ktx:1.9.3")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
