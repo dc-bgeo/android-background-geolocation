@@ -213,7 +213,12 @@ data class ProviderState(
     val accuracyAuthorization: AccuracyAuthorization?,
 ) {
     companion object {
-        fun from(json: JSONObject): ProviderState? = ProviderState(
+        // Non-failable: unlike every other `from` in this file, there is no
+        // `return null` path here — every field either decodes or falls back
+        // to a default. Kept a plain `ProviderState` return (not `?`) so
+        // callers don't need a force-unwrap that an invariant, not the type
+        // system, was making safe.
+        fun from(json: JSONObject): ProviderState = ProviderState(
             status = AuthorizationStatus.from(json.intOrNull("status") ?: -1),
             enabled = json.boolOrNull("enabled") ?: false,
             gps = json.boolOrNull("gps") ?: false,
@@ -246,7 +251,10 @@ data class State(
     }
 
     companion object {
-        fun from(json: JSONObject): State? = State(json.boolOrNull("enabled") ?: false, json)
+        // Non-failable: no `return null` path — `enabled` defaults to false
+        // rather than failing the decode. Plain `State` return, not `?`, for
+        // the same reason as `ProviderState.from` above.
+        fun from(json: JSONObject): State = State(json.boolOrNull("enabled") ?: false, json)
     }
 }
 

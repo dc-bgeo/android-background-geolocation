@@ -1,5 +1,7 @@
 package com.bgeo.sdk
 
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.After
@@ -74,6 +76,28 @@ class FacadeLifecycleTest {
                 "would be lost forever instead of buffered",
             "sample-uuid",
             received?.uuid,
+        )
+    }
+
+    @Test
+    fun `loggerForegroundObserver flags foreground and flushes the backlog on start, clears the flag on stop`() {
+        // DefaultLifecycleObserver needs no Android runtime -- only
+        // ProcessLifecycleOwner.get() (in attach()) does -- so onStart/onStop
+        // are callable directly against a stub LifecycleOwner never actually
+        // dereferenced by the observer body.
+        val owner = object : LifecycleOwner {
+            override val lifecycle: Lifecycle get() = error("unused by setLoggerForeground/flushLogs")
+        }
+
+        BackgroundGeolocation.loggerForegroundObserver.onStart(owner)
+        BackgroundGeolocation.loggerForegroundObserver.onStop(owner)
+
+        assertEquals(listOf(true, false), engine.setLoggerForegroundCalls)
+        assertEquals(
+            "onStart must also drain the backlog accumulated while backgrounded -- " +
+                "setLoggerForeground(true) alone only arms the flush for SUBSEQUENT lines",
+            1,
+            engine.flushLogsCallCount,
         )
     }
 
@@ -175,6 +199,19 @@ class FacadeLifecycleTest {
         engine.stubbedCurrentPosition = FakeEngine.Outcome.success(sampleLocationJson())
         val location = BackgroundGeolocation.getCurrentPosition()
         assertEquals("sample-uuid", location.uuid)
+    }
+
+    @Test
+    fun `getCurrentPosition forwards its options to the engine`() = runTest {
+        // Without this, the method could pass null through to the engine and
+        // every other test here would still pass -- this is the only proof
+        // that e.g. `timeout` (SECONDS; the engine multiplies by 1000) reaches
+        // the engine unmodified.
+        engine.stubbedCurrentPosition = FakeEngine.Outcome.success(sampleLocationJson())
+        BackgroundGeolocation.getCurrentPosition(CurrentPositionOptions(samples = 3, timeout = 10.0))
+        assertEquals(1, engine.getCurrentPositionOptions.size)
+        assertEquals(3, engine.getCurrentPositionOptions.first()?.getInt("samples"))
+        assertEquals(10.0, engine.getCurrentPositionOptions.first()?.getDouble("timeout"))
     }
 
     @Test

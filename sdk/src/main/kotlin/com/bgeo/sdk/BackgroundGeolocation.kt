@@ -29,6 +29,34 @@ object BackgroundGeolocation {
     internal var hub: EventHub = EventHub()
 
     /**
+     * App foreground is one of the log-flush piggyback triggers: while
+     * foreground, the logger also debounce-flushes each line so a watching
+     * console is near-realtime (`BGGeoLogger.foreground` gates a 3s
+     * trailing-edge flush for SUBSEQUENT lines) — mirrors
+     * `BackgroundGeolocationModule.kt:49,54` / `BGeoFlutterPlugin.kt:56,59`.
+     * [Engine.flushLogs] additionally drains whatever backlog accumulated
+     * while backgrounded — the flag alone does nothing for lines already
+     * written, and that backlog is exactly what a developer opens the web
+     * console to read (same pairing as `BackgroundGeolocationModule.kt:49-50`
+     * / `BGeoFlutterPlugin.kt:56-57`).
+     *
+     * Extracted from [attach] into a standalone property (rather than an
+     * anonymous object built inline) so it's unit-testable: `DefaultLifecycleObserver`
+     * needs no Android runtime, only `ProcessLifecycleOwner` does — calling
+     * `onStart`/`onStop` directly against a stub `LifecycleOwner` exercises the
+     * real logic without a device. See `FacadeLifecycleTest`.
+     */
+    internal val loggerForegroundObserver = object : DefaultLifecycleObserver {
+        override fun onStart(owner: LifecycleOwner) {
+            engine.setLoggerForeground(true)
+            engine.flushLogs()
+        }
+        override fun onStop(owner: LifecycleOwner) {
+            engine.setLoggerForeground(false)
+        }
+    }
+
+    /**
      * Wire the SDK to the process. Call from `Application.onCreate()` — the
      * system restarts this process for boot, geofence and service events, and
      * `Application.onCreate` is the only hook that runs in every one of them.
@@ -45,21 +73,7 @@ object BackgroundGeolocation {
     fun attach(context: Context) {
         engine.init(context)
         attachEventHubAndResume()
-        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
-            // App foreground is one of the log-flush piggyback triggers: while
-            // foreground, the logger also debounce-flushes each line so a
-            // watching console is near-realtime (BGGeoLogger.foreground gates a
-            // 3s trailing-edge flush) — mirrors
-            // BackgroundGeolocationModule.kt:49,54 / BGeoFlutterPlugin.kt:56,59.
-            // Without this, an app-logged line waits for the next heartbeat
-            // before reaching the web console.
-            override fun onStart(owner: LifecycleOwner) {
-                engine.setLoggerForeground(true)
-            }
-            override fun onStop(owner: LifecycleOwner) {
-                engine.setLoggerForeground(false)
-            }
-        })
+        ProcessLifecycleOwner.get().lifecycle.addObserver(loggerForegroundObserver)
     }
 
     /**
@@ -145,7 +159,7 @@ object BackgroundGeolocation {
 
     // ---- provider / power -------------------------------------------------
 
-    suspend fun getProviderState(): ProviderState = ProviderState.from(engine.providerState())!!
+    suspend fun getProviderState(): ProviderState = ProviderState.from(engine.providerState())
 
     /** Current OS battery-saver state. */
     suspend fun isPowerSaveMode(): Boolean = engine.isPowerSaveMode()
@@ -217,7 +231,7 @@ object BackgroundGeolocation {
     private fun licenseError(code: String): BGeoException =
         BGeoException.from(code, "BGeo license check failed ($code)")
 
-    private fun currentState(): State = State.from(engine.stateMap())!!
+    private fun currentState(): State = State.from(engine.stateMap())
 
     private fun decodeLocationOrThrow(json: JSONObject?): Location =
         json?.let(Location::from) ?: throw BGeoException.Unknown("DECODE_ERROR", "Failed to decode location")

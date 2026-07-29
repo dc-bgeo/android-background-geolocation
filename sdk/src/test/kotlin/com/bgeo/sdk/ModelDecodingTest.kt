@@ -132,19 +132,18 @@ class ModelDecodingTest {
             put("someFutureDiagnosticKey", 7)
         }
         val state = State.from(json)
-        assertNotNull(state)
-        assertEquals(true, state!!.enabled)
+        assertEquals(true, state.enabled)
         assertEquals(42.0, state["odometer"])
         assertEquals(7, state["someFutureDiagnosticKey"])
     }
 
     @Test
     fun `state defaults enabled to false when the key is absent rather than failing`() {
-        // Non-failable in practice: the engine always resolves stateMap(),
-        // never rejects, so decoding must not fail even on a payload missing keys.
+        // Non-failable: `State.from` returns a plain `State`, not `State?` —
+        // the engine always resolves stateMap(), never rejects, so decoding
+        // must not fail even on a payload missing keys.
         val state = State.from(JSONObject())
-        assertNotNull(state)
-        assertEquals(false, state!!.enabled)
+        assertEquals(false, state.enabled)
         assertNull(state["enabled"])
     }
 
@@ -211,17 +210,17 @@ class ModelDecodingTest {
             put("accuracyAuthorization", 1)
         }
         val providerState = ProviderState.from(json)
-        assertNotNull(providerState)
-        assertEquals(AuthorizationStatus.ALWAYS, providerState!!.status)
+        assertEquals(AuthorizationStatus.ALWAYS, providerState.status)
         assertEquals(AccuracyAuthorization.REDUCED, providerState.accuracyAuthorization)
         assertEquals(false, providerState.network)
     }
 
     @Test
     fun `provider state falls back rather than failing on an empty json object`() {
+        // Non-failable: `ProviderState.from` returns a plain `ProviderState`,
+        // not `ProviderState?` — there is no `return null` path.
         val providerState = ProviderState.from(JSONObject())
-        assertNotNull(providerState)
-        assertEquals(AuthorizationStatus.NOT_DETERMINED, providerState!!.status)
+        assertEquals(AuthorizationStatus.NOT_DETERMINED, providerState.status)
         assertEquals(false, providerState.enabled)
         assertEquals(false, providerState.gps)
         assertEquals(false, providerState.network)
