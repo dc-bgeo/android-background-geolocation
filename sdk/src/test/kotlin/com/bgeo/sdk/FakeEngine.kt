@@ -150,8 +150,11 @@ internal class FakeEngine : Engine {
 
     var syncCallCount = 0
     var stubbedSync: Outcome = Outcome.success()
+    /** Fires DURING `sync()`, before the callback resolves — lets a test mutate [stubbedGetLocations] to prove a caller snapshotted the queue before draining it, not after. */
+    var onSync: (() -> Unit)? = null
     override fun sync(callback: BGGeoCallback) {
         syncCallCount++
+        onSync?.invoke()
         resolve(callback, stubbedSync)
     }
 
@@ -201,8 +204,11 @@ internal class FakeEngine : Engine {
     override fun pendingLogCount(): Int = stubbedPendingLogCount
 
     var flushLogsCallCount = 0
+    /** Fires DURING `flushLogs()` — lets a test mutate [stubbedPendingLogCount] to prove a caller read the pending count before flushing, not after. */
+    var onFlushLogs: (() -> Unit)? = null
     override fun flushLogs() {
         flushLogsCallCount++
+        onFlushLogs?.invoke()
     }
 
     data class LogCall(
