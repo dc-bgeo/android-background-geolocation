@@ -169,6 +169,12 @@ data class Geofence(
     }
 }
 
+// NOTE: because `data` below can hold a `JSONObject`, and `org.json.JSONObject`
+// does not override `equals`/`hashCode`, this data class's generated `equals`
+// is identity-based (reference equality) whenever two `LogEntry` values carry
+// a JSONObject `data` — two entries decoded from equal-looking JSON will not
+// be `==` to each other. iOS has the same property with its `Any?`-typed
+// twin. Not fixed here: no current caller compares `LogEntry` values.
 data class LogEntry(
     val ts: String,
     val level: Int,
@@ -178,9 +184,14 @@ data class LogEntry(
     // `Any?` (not `String?`): `LiveEngine.newestLogs` (Engine.kt) re-parses the
     // stored `data` string into a `JSONObject` when it's valid JSON, falling
     // back to the raw `String` otherwise — matching the RN bridge
-    // (BackgroundGeolocationModule.kt:413) and the iOS facade. `stringOrNull`
-    // would decode every JSON-shaped `data` (i.e. every app-written one) to
-    // `null`, since a non-String value isn't a String.
+    // (BackgroundGeolocationModule.kt:413) and the iOS facade. Typed as
+    // `String?` and read via `stringOrNull`, a JSON-shaped `data` (i.e. ALL
+    // app-written log data, since the facade's logger serialises a map to
+    // JSON on the way in) would decode as `org.json`'s `optString` stringifies
+    // it back to JSON *text* rather than returning the value directly — the
+    // caller would have to parse it a second time, and the distinction
+    // between "this was a JSON object" and "this was a plain string" would be
+    // erased entirely. `Any?` + `anyOrNull` preserves both shapes as-is.
     val data: Any?,
 ) {
     companion object {

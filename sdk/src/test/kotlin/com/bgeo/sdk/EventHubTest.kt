@@ -244,4 +244,33 @@ class EventHubTest {
 
         assertEquals(800, received.get())
     }
+
+    @Test
+    fun `concurrent emissions from several threads with no subscriber still enforce the buffer cap exactly`() {
+        // Unlike the test above (which subscribes FIRST, so every emit takes
+        // the has-subscribers branch and only ever READS `subscribers`), this
+        // one emits from 8 threads with NO subscriber at all. Every emit takes
+        // the no-subscriber branch in `receive`, which does the compound
+        // `getOrPut` + size-check + `add` this class's lock exists to protect
+        // (see the class doc's synchronisation rationale). If that sequence
+        // isn't atomic, 8 threads racing on it can push the buffer past 64,
+        // lose an entry to a torn read-modify-write, or throw a
+        // ConcurrentModificationException out of the shared ArrayList.
+        val engine = FakeEngine()
+        val hub = EventHub()
+        hub.attach(engine)
+
+        val nextId = AtomicInteger(0)
+        val threads = (0 until 8).map {
+            Thread { repeat(50) { engine.emit("location", JSONObject().put("id", nextId.getAndIncrement())) } }
+        }
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
+
+        val received = mutableListOf<Int>()
+        hub.subscribe("location") { received.add(it.getInt("id")) }
+
+        assertEquals(64, received.size)
+        assertEquals("no id should be delivered twice", 64, received.toSet().size)
+    }
 }

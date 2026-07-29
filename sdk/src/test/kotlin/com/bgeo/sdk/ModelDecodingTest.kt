@@ -317,10 +317,15 @@ class ModelDecodingTest {
     // LogEntry boundary: a BGGeoDb.LogRow (the engine's stored shape) goes
     // through logRowToJson (Engine.kt's LiveEngine.newestLogs mapping) and
     // then through LogEntry.from, exactly as the real facade path runs. This
-    // is the exact regression the iOS facade had to fix in its final review:
-    // typing LogEntry.data as String? (read via stringOrNull) decoded every
-    // JSON-shaped data value - which is ALL app-written log data, since the
-    // facade's logger serialises a map to JSON on the way in - to null.
+    // is the regression the iOS facade had to fix in its final review: typing
+    // LogEntry.data as String? (read via stringOrNull) discarded the JSON
+    // shape for every JSON-shaped data value - which is ALL app-written log
+    // data, since the facade's logger serialises a map to JSON on the way in.
+    // The value itself did not become null (org.json's optString stringifies
+    // a non-String value back to JSON text rather than returning null for
+    // it) - the defect was the caller getting JSON text it must parse a
+    // second time, with no way to tell that case apart from a genuinely
+    // plain string.
 
     @Test
     fun `log entry data survives the LiveEngine mapping as a JSONObject when the stored value is JSON`() {
