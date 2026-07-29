@@ -268,6 +268,48 @@ class ModelDecodingTest {
     fun `heartbeat event wraps the raw json`() {
         val json = JSONObject().put("odometer", 5.0)
         val event = HeartbeatEvent.from(json)
-        assertEquals(5.0, event.raw.getDouble("odometer"), 0.0001)
+        assertNotNull(event)
+        assertEquals(5.0, event!!.raw.getDouble("odometer"), 0.0001)
+    }
+
+    @Test
+    fun `log entry decodes every field`() {
+        val json = JSONObject().apply {
+            put("ts", "2026-07-29T10:00:00.000Z")
+            put("level", 3)
+            put("src", "native")
+            put("event", "app")
+            put("message", "started")
+            put("data", "{\"reason\":\"test\"}")
+        }
+        val entry = LogEntry.from(json)
+        assertNotNull(entry)
+        assertEquals("2026-07-29T10:00:00.000Z", entry!!.ts)
+        assertEquals(3, entry.level)
+        assertEquals("native", entry.src)
+        assertEquals("app", entry.event)
+        assertEquals("started", entry.message)
+        assertEquals("{\"reason\":\"test\"}", entry.data)
+    }
+
+    @Test
+    fun `log entry decoding fails when a required field is missing`() {
+        val json = JSONObject().put("level", 3).put("src", "native").put("event", "app")
+        // "ts" is missing.
+        assertNull(LogEntry.from(json))
+    }
+
+    @Test
+    fun `log entry decodes with message and data absent`() {
+        val json = JSONObject().apply {
+            put("ts", "2026-07-29T10:00:00.000Z")
+            put("level", 2)
+            put("src", "js")
+            put("event", "warn")
+        }
+        val entry = LogEntry.from(json)
+        assertNotNull(entry)
+        assertNull(entry!!.message)
+        assertNull(entry.data)
     }
 }

@@ -318,6 +318,9 @@ data class ConnectivityChangeEvent(
 
 data class HeartbeatEvent(val raw: JSONObject) {
     companion object {
-        fun from(json: JSONObject): HeartbeatEvent = HeartbeatEvent(json)
+        // Non-failable in practice (this just wraps the raw payload), but
+        // returns HeartbeatEvent? for signature consistency with every other
+        // model's `from(json: JSONObject): X?`.
+        fun from(json: JSONObject): HeartbeatEvent? = HeartbeatEvent(json)
     }
 }
