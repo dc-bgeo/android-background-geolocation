@@ -11,14 +11,32 @@ import org.junit.Test
 /**
  * A compile-time guard, not a behavioural test: constructs every public
  * model, options, config and exception type through its public constructor
- * and reads every public property. Kotlin's default visibility is `public`,
- * the opposite risk from iOS - a property or constructor parameter that a
- * later change accidentally narrows to `internal` (or renames/removes)
- * breaks this file's compilation, not just some runtime assertion.
+ * and reads every public property. A later change that renames, removes, or
+ * changes the type of a constructor parameter or property breaks this file's
+ * compilation, not just some runtime assertion - so it pins the public
+ * SIGNATURE and shape of this surface, plus (via the model round-trip
+ * assertions) its decoding behaviour.
  *
- * What this deliberately does NOT cover: `Engine`, `LiveEngine`, `EventHub`,
- * `FakeEngine`, the `JsonDecoding` helpers, `awaitCallback` and
- * `PermissionPlan` are `internal` - out of scope for a PUBLIC surface guard.
+ * What this does NOT guard, and why: VISIBILITY. On most Kotlin setups you'd
+ * expect narrowing a type from public to `internal` to break a test like this
+ * one that references it - but AGP/the Kotlin Gradle plugin wires each unit
+ * test compilation as a FRIEND of the corresponding main compilation, so test
+ * code sees `internal` declarations exactly as if they were public. This
+ * module already relies on that elsewhere - `PermissionPlanTest` calls the
+ * `internal object PermissionPlan` and `JsonDecodingTest` calls the
+ * `internal fun` helpers in `JsonDecoding.kt` directly, with no
+ * `-Xfriend-paths` configured anywhere. The practical consequence: if
+ * `Config`, `Location`, `Coords` or any other type below were narrowed to
+ * `internal` tomorrow, every test in this file would still compile and still
+ * pass. Visibility is guarded separately, by the source-level audit (grep
+ * plus a manual read of every file), which the Kotlin compiler enforces
+ * categorically at the point a real CONSUMING app (a different Gradle
+ * module, with no friend-path access) tries to compile against this one.
+ *
+ * What this deliberately does NOT cover for other reasons: `Engine`,
+ * `LiveEngine`, `EventHub`, `FakeEngine`, the `JsonDecoding` helpers,
+ * `awaitCallback` and `PermissionPlan` are `internal` - out of scope for a
+ * PUBLIC surface guard regardless of the friend-path caveat above.
  * `Subscription` and `PermissionRequester` are public types with unusual
  * shapes (an internal constructor; an Activity-bound constructor) - each is
  * covered below the way an app would actually be able to use it.

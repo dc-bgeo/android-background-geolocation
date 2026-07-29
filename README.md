@@ -42,7 +42,7 @@ whole lifetime.
 ### 2. `ACCESS_BACKGROUND_LOCATION` must be declared by your app
 
 The engine AAR deliberately omits this permission from its own manifest
-(`core/android/engine/src/main/AndroidManifest.xml:4-6`) — Google Play policy
+(`core/android/engine/src/main/AndroidManifest.xml:3-5`) — Google Play policy
 requires the *app* to own both the manifest declaration and the Play Console
 background-location disclosure. Add it to your app's `AndroidManifest.xml`:
 
@@ -61,7 +61,7 @@ manifest at launch:
 </application>
 ```
 
-(source of the exact shape: `react-native/src/types.ts:130-136`). In a
+(source of the exact shape: `react-native/src/types.ts:138-144`). In a
 release build, a missing/invalid/expired/mismatched key makes `ready()`/
 `start()` reject with a `LICENSE_*` `BGeoException`. A **debuggable** build
 always runs unlicensed (evaluation mode) regardless of the key — if tracking
