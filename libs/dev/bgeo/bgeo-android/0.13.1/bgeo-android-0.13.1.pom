@@ -9,7 +9,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.bgeo</groupId>
   <artifactId>bgeo-android</artifactId>
-  <version>0.13.0</version>
+  <version>0.13.1</version>
   <packaging>aar</packaging>
   <dependencies>
     <dependency>
