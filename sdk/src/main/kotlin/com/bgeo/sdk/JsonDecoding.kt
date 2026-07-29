@@ -39,3 +39,13 @@ internal fun JSONObject.boolOrNull(key: String): Boolean? =
 
 internal fun JSONObject.stringOrNull(key: String): String? = if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
 internal fun JSONObject.objectOrNull(key: String): JSONObject? = if (isNull(key)) null else optJSONObject(key)
+
+/**
+ * Raw value for a key whose shape isn't known ahead of time (e.g. `LogEntry.
+ * data`, which the engine/`LiveEngine` may hand back as either a parsed
+ * `JSONObject` or a plain `String` — see `Engine.kt`'s `logRowToJson`).
+ * Guards the same `JSONObject.NULL`-vs-Kotlin-`null` trap as the other
+ * helpers: absent key or explicit JSON `null` both read as `null`, not the
+ * `JSONObject.NULL` singleton.
+ */
+internal fun JSONObject.anyOrNull(key: String): Any? = if (isNull(key)) null else opt(key)

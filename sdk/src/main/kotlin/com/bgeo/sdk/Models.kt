@@ -175,7 +175,13 @@ data class LogEntry(
     val src: String,
     val event: String,
     val message: String?,
-    val data: String?,
+    // `Any?` (not `String?`): `LiveEngine.newestLogs` (Engine.kt) re-parses the
+    // stored `data` string into a `JSONObject` when it's valid JSON, falling
+    // back to the raw `String` otherwise — matching the RN bridge
+    // (BackgroundGeolocationModule.kt:413) and the iOS facade. `stringOrNull`
+    // would decode every JSON-shaped `data` (i.e. every app-written one) to
+    // `null`, since a non-String value isn't a String.
+    val data: Any?,
 ) {
     companion object {
         fun from(json: JSONObject): LogEntry? {
@@ -183,7 +189,7 @@ data class LogEntry(
             val level = json.intOrNull("level") ?: return null
             val src = json.stringOrNull("src") ?: return null
             val event = json.stringOrNull("event") ?: return null
-            return LogEntry(ts, level, src, event, json.stringOrNull("message"), json.stringOrNull("data"))
+            return LogEntry(ts, level, src, event, json.stringOrNull("message"), json.anyOrNull("data"))
         }
     }
 }

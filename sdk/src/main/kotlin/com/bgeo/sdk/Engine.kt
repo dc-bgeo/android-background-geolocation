@@ -122,19 +122,11 @@ internal object LiveEngine : Engine {
     override fun authStateMap(): JSONObject = BGGeoEngine.authStateMap()
 
     // BGGeoDb.newestLogs returns its own LogRow type (id/tsMs/level/src/event/
-    // message/data), not JSONObject — this mapping is the same shape the RN
-    // bridge builds in BackgroundGeolocationModule.kt's getLog(), needed
-    // because the Engine contract returns JSONObject uniformly for the facade.
-    override fun newestLogs(limit: Int): List<JSONObject> = BGGeoDb.newestLogs(limit).map { row ->
-        JSONObject().apply {
-            put("ts", logTimestampFormatter.get()!!.format(Date(row.tsMs)))
-            put("level", row.level)
-            put("src", row.src)
-            put("event", row.event)
-            row.message?.let { put("message", it) }
-            row.data?.let { raw -> put("data", runCatching { JSONObject(raw) }.getOrNull() ?: raw) }
-        }
-    }
+    // message/data), not JSONObject — logRowToJson (below) is the same shape
+    // the RN bridge builds in BackgroundGeolocationModule.kt's getLog(),
+    // needed because the Engine contract returns JSONObject uniformly for
+    // the facade.
+    override fun newestLogs(limit: Int): List<JSONObject> = BGGeoDb.newestLogs(limit).map(::logRowToJson)
     override fun deleteAllLogs(): Int = BGGeoDb.deleteAllLogs()
     override fun pendingLogCount(): Int = BGGeoHttpStore.pendingLogCount()
     override fun flushLogs() = BGGeoHttpStore.flushLogs()
@@ -158,4 +150,23 @@ private val logTimestampFormatter = ThreadLocal.withInitial {
     SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
         timeZone = TimeZone.getTimeZone("UTC")
     }
+}
+
+/**
+ * Maps one [BGGeoDb.LogRow] to the JSONObject shape `LogEntry.from` (Models.kt)
+ * decodes: `ts`/`level`/`src`/`event`/`message`?/`data`?. `data` is re-parsed
+ * into a [JSONObject] when the stored string is valid JSON (matching the RN
+ * bridge's `getLog()`, `BackgroundGeolocationModule.kt:413`), falling back to
+ * the raw string otherwise — both shapes are real and `LogEntry.data` is
+ * typed `Any?` to carry either. Exposed at file scope (not private) so
+ * `ModelDecodingTest` can prove the round trip through `LogEntry.from`
+ * without needing a real SQLite-backed `BGGeoDb`.
+ */
+internal fun logRowToJson(row: BGGeoDb.LogRow): JSONObject = JSONObject().apply {
+    put("ts", logTimestampFormatter.get()!!.format(Date(row.tsMs)))
+    put("level", row.level)
+    put("src", row.src)
+    put("event", row.event)
+    row.message?.let { put("message", it) }
+    row.data?.let { raw -> put("data", runCatching { JSONObject(raw) }.getOrNull() ?: raw) }
 }

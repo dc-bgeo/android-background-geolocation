@@ -80,4 +80,21 @@ class JsonDecodingTest {
         // org.json stores whole numbers as Int; doubleOrNull must still read them.
         assertEquals(1234.0, JSONObject().put("odometer", 1234).doubleOrNull("odometer")!!, 0.0001)
     }
+
+    @Test
+    fun `anyOrNull returns the value as-is when present, whatever its type`() {
+        val nested = JSONObject().put("reason", "test")
+        assertEquals(nested, JSONObject().put("data", nested).anyOrNull("data"))
+        assertEquals("plain", JSONObject().put("data", "plain").anyOrNull("data"))
+    }
+
+    @Test
+    fun `anyOrNull returns null when the key is absent`() {
+        assertNull(JSONObject().anyOrNull("data"))
+    }
+
+    @Test
+    fun `anyOrNull returns null for a JSON null rather than the JSONObject NULL singleton`() {
+        assertNull(JSONObject().put("data", JSONObject.NULL).anyOrNull("data"))
+    }
 }

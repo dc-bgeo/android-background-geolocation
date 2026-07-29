@@ -312,4 +312,47 @@ class ModelDecodingTest {
         assertNull(entry!!.message)
         assertNull(entry.data)
     }
+
+    // The two tests below prove the round trip end to end at the LiveEngine ->
+    // LogEntry boundary: a BGGeoDb.LogRow (the engine's stored shape) goes
+    // through logRowToJson (Engine.kt's LiveEngine.newestLogs mapping) and
+    // then through LogEntry.from, exactly as the real facade path runs. This
+    // is the exact regression the iOS facade had to fix in its final review:
+    // typing LogEntry.data as String? (read via stringOrNull) decoded every
+    // JSON-shaped data value - which is ALL app-written log data, since the
+    // facade's logger serialises a map to JSON on the way in - to null.
+
+    @Test
+    fun `log entry data survives the LiveEngine mapping as a JSONObject when the stored value is JSON`() {
+        val row = com.bgeo.BGGeoDb.LogRow(
+            id = 1L,
+            tsMs = 1785312000000L,
+            level = 3,
+            src = "native",
+            event = "app",
+            message = null,
+            data = "{\"reason\":\"test\"}",
+        )
+        val entry = LogEntry.from(logRowToJson(row))
+        assertNotNull(entry)
+        val data = entry!!.data
+        assertTrue("expected a JSONObject, got ${data?.javaClass}", data is JSONObject)
+        assertEquals("test", (data as JSONObject).getString("reason"))
+    }
+
+    @Test
+    fun `log entry data survives the LiveEngine mapping as a raw String when the stored value is not JSON`() {
+        val row = com.bgeo.BGGeoDb.LogRow(
+            id = 2L,
+            tsMs = 1785312000000L,
+            level = 2,
+            src = "js",
+            event = "warn",
+            message = null,
+            data = "not json",
+        )
+        val entry = LogEntry.from(logRowToJson(row))
+        assertNotNull(entry)
+        assertEquals("not json", entry!!.data)
+    }
 }
