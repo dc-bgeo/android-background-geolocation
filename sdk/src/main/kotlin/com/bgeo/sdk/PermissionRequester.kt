@@ -5,6 +5,8 @@ import androidx.activity.result.ActivityResultCaller
 import androidx.activity.result.contract.ActivityResultContracts
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Activity-bound plumbing for the escalating permission flow. What to request
@@ -28,37 +30,45 @@ class PermissionRequester(private val caller: ActivityResultCaller) {
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result -> onResult?.invoke(result) }
 
+    // Guards `onResult`/`launch` against a second concurrent `request()` call
+    // (e.g. one fired from onResume racing an "Enable tracking" button tap):
+    // without it, the second call's launch overwrites onResult and the
+    // system's callback for the FIRST call resumes the SECOND continuation,
+    // leaving the first caller suspended forever.
+    private val mutex = Mutex()
+
     /**
-     * Runs [PermissionPlan]'s escalation to completion, one request at a time.
-     * Stops early if a step comes back not fully granted, rather than
-     * re-prompting for the same denied permission forever (device-verified
-     * only - see the task report for why this is not a straight port of the
-     * RN/Flutter bridges' denial handling).
-     *
-     * Mirrors those bridges' `finishPermission()`: resumes tracking (covers a
-     * `start()` that earlier bailed on missing permission) before emitting a
-     * provider-change, so subscribers see the final grant state.
+     * Runs [PermissionPlan]'s escalation to completion, one request at a
+     * time, advancing past each stage once it has been attempted regardless
+     * of outcome - see [PermissionPlan]'s class doc for why a denial does not
+     * stop the chain. Afterwards, resumes tracking (covers a `start()` that
+     * earlier bailed on missing permission) and emits a provider-change so
+     * subscribers see the final grant state - matching the RN/Flutter
+     * bridges' `finishPermission()`, minus their `maybeShowAuthorizationAlert()`
+     * dialog, which this facade does not port.
      */
-    suspend fun request(): AuthorizationStatus {
+    suspend fun request(): AuthorizationStatus = mutex.withLock {
         val engine = BackgroundGeolocation.engine
+        var attempted = emptySet<PermissionPlan.Stage>()
         while (true) {
-            val next = PermissionPlan.nextRequest(currentGrants(engine)) ?: break
-            val result = launchAndAwait(next)
-            if (next.any { permission -> result[permission] != true }) break
+            val step = PermissionPlan.nextRequest(currentGrants(engine), attempted) ?: break
+            launchAndAwait(step.permissions)
+            attempted = attempted + step.stage
         }
         engine.resumeTrackingIfEnabled()
         engine.emitProviderChange()
-        return AuthorizationStatus.from(engine.numericStatus())
+        AuthorizationStatus.from(engine.numericStatus())
     }
 
-    private suspend fun launchAndAwait(permissions: List<String>): Map<String, Boolean> =
-        suspendCancellableCoroutine { continuation ->
-            onResult = { result ->
+    private suspend fun launchAndAwait(permissions: List<String>) {
+        suspendCancellableCoroutine<Unit> { continuation ->
+            onResult = {
                 onResult = null
-                continuation.resume(result)
+                continuation.resume(Unit)
             }
             launcher.launch(permissions.toTypedArray())
         }
+    }
 
     private fun currentGrants(engine: Engine) = PermissionPlan.Grants(
         hasFineOrCoarse = engine.hasFineOrCoarse(),
