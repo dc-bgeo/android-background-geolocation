@@ -2,6 +2,8 @@ package dev.bgeo.example
 
 import com.bgeo.sdk.AuthorizationConfig
 import com.bgeo.sdk.Config
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -15,7 +17,7 @@ class DeviceLinkTest {
     private val deviceInfo = DeviceInfo(model = "Pixel 7", osVersion = "14", appVersion = "0.1.0")
 
     private fun deviceLink(
-        http: FakeHttp,
+        http: Http,
         storage: Storage = InMemoryStorage(),
         store: AppStore = AppStore(),
         applyConfig: MutableList<Config> = mutableListOf(),
@@ -320,11 +322,67 @@ class DeviceLinkTest {
 
         assertEquals(1, applied.size)
         assertEquals(Config.CLEAR_STRING, applied[0].url)
+        // logUrl must be cleared the same way as url — otherwise the engine
+        // keeps POSTing this device's logs to the server it just unlinked
+        // from, now with the auth block stripped.
+        assertEquals(Config.CLEAR_STRING, applied[0].logUrl)
         assertEquals(AuthorizationConfig.CLEAR, applied[0].authorization)
         // Not the Flutter-style empty-string workaround.
         assertTrue(applied[0].url != "")
+        assertTrue(applied[0].logUrl != "")
         assertNull(storage.getString("bgeo:link"))
         assertEquals(false, store.link.value.linked)
         assertNull(store.link.value.deviceId)
+    }
+
+    @Test
+    fun `two concurrent 401s produce exactly one refresh request`() = runTest {
+        val storage = InMemoryStorage()
+        storage.putString(
+            "bgeo:link",
+            """{"serverUrl":"https://app.bgeo.dev","deviceId":"d1","accessToken":"stale","refreshToken":"r-old"}""",
+        )
+        val http = ConcurrentRefreshFakeHttp()
+        val link = deviceLink(http, storage = storage)
+
+        // Simulates the geofence sync and history load firing together on
+        // screen entry: both hit the stale access token's 401 before either
+        // has a chance to refresh.
+        val first = async { link.authorizedFetch("/device/geofences") }
+        val second = async { link.authorizedFetch("/device/history") }
+        val (firstResponse, secondResponse) = listOf(first, second).awaitAll()
+
+        assertEquals(1, http.refreshCallCount)
+        assertEquals(200, firstResponse.status)
+        assertEquals(200, secondResponse.status)
+
+        val stored = JSONObject(storage.getString("bgeo:link")!!)
+        assertEquals("fresh", stored.getString("accessToken"))
+    }
+}
+
+/**
+ * [Http] fake for the concurrent-401 test: the first two calls to any
+ * non-refresh URL return 401 (one per racing caller), every call after that
+ * succeeds. A `delay` on both branches forces the two [DeviceLinkTest]
+ * coroutines to actually interleave under `runTest`'s virtual scheduler —
+ * without it, one call would run to completion before the other starts, and
+ * the race this test exists to catch would never occur.
+ */
+private class ConcurrentRefreshFakeHttp : Http {
+    var refreshCallCount = 0
+        private set
+    private var nonRefreshCallCount = 0
+
+    override suspend fun send(request: HttpRequest): HttpResponse {
+        if (request.url.endsWith("/device/auth/refresh")) {
+            refreshCallCount++
+            kotlinx.coroutines.delay(20)
+            return HttpResponse(200, """{"access_token":"fresh","refresh_token":"r-new"}""")
+        }
+        nonRefreshCallCount++
+        val callIndex = nonRefreshCallCount
+        kotlinx.coroutines.delay(10)
+        return if (callIndex <= 2) HttpResponse(401, "{}") else HttpResponse(200, """{"ok":true}""")
     }
 }

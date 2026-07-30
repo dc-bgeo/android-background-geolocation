@@ -49,6 +49,11 @@ dependencies {
     implementation("org.osmdroid:osmdroid-android:6.1.20")
 
     testImplementation("junit:junit:4.13.2")
+    // Real org.json to shadow AGP's mockable-android.jar stub on the unit-test
+    // classpath (AGP places the stub jar last, so this wins). COUPLED WITH
+    // `unitTests.isReturnDefaultValues = true` above — see the comment on
+    // that flag. Removing this dependency makes every JSON test in this
+    // module pass vacuously against the stub JSONObject instead.
     testImplementation("org.json:json:20240303")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }

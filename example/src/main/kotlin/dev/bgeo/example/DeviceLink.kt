@@ -4,6 +4,8 @@ import android.content.SharedPreferences
 import com.bgeo.sdk.AuthorizationConfig
 import com.bgeo.sdk.BackgroundGeolocation
 import com.bgeo.sdk.Config
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONException
 import org.json.JSONObject
 import java.util.UUID
@@ -93,6 +95,9 @@ class DeviceLink(
      */
     private val applyConfig: suspend (Config) -> Unit = { BackgroundGeolocation.setConfig(it) },
 ) {
+    /** Serialises the 401-refresh section of [authorizedFetch] — see its doc comment. */
+    private val refreshMutex = Mutex()
+
     private fun installUuid(): String {
         storage.getString(INSTALL_UUID_KEY)?.let { return it }
         val fresh = UUID.randomUUID().toString()
@@ -188,10 +193,10 @@ class DeviceLink(
         return link
     }
 
-    /** Clears persistence and unsets the SDK's `url`/`authorization` via the clear sentinel (not empty strings — see `Config.CLEAR_STRING`). */
+    /** Clears persistence and unsets the SDK's `url`/`logUrl`/`authorization` via the clear sentinel (not empty strings — see `Config.CLEAR_STRING`). */
     suspend fun unlink() {
         storage.remove(LINK_KEY)
-        applyConfig(Config(url = Config.CLEAR_STRING, authorization = AuthorizationConfig.CLEAR))
+        applyConfig(Config(url = Config.CLEAR_STRING, logUrl = Config.CLEAR_STRING, authorization = AuthorizationConfig.CLEAR))
         store.setLink(linked = false, clearDeviceId = true)
     }
 
@@ -201,6 +206,15 @@ class DeviceLink(
      * rather than retried again — a dead refresh token must not be retried
      * indefinitely. A refresh that itself fails throws, surfacing the
      * refresh's own error rather than the original 401.
+     *
+     * The refresh itself is guarded by [refreshMutex]: two calls racing to a
+     * 401 at the same time (e.g. geofence sync and history load firing
+     * together on screen entry) must not both POST `/device/auth/refresh` —
+     * with single-use refresh tokens the loser would surface a spurious
+     * "refresh token revoked" instead of quietly reusing the winner's fresh
+     * pair. Whoever gets the lock second re-checks storage first: if the
+     * other caller already refreshed (the stored access token moved past the
+     * one that triggered *this* 401), reuse it instead of refreshing again.
      */
     suspend fun authorizedFetch(path: String, method: String = "GET", body: String? = null): HttpResponse {
         var link = loadStoredLink() ?: throw DeviceLinkError("not linked")
@@ -214,7 +228,11 @@ class DeviceLink(
 
         var response = http.send(request(link.accessToken))
         if (response.status == 401) {
-            link = refreshTokens(link)
+            val staleAccessToken = link.accessToken
+            link = refreshMutex.withLock {
+                val current = loadStoredLink() ?: link
+                if (current.accessToken != staleAccessToken) current else refreshTokens(current)
+            }
             response = http.send(request(link.accessToken))
         }
         return response

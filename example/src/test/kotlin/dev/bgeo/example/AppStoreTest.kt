@@ -21,18 +21,24 @@ class AppStoreTest {
     @Test
     fun `appendLog evicts the oldest lines once the buffer exceeds its cap`() {
         val store = AppStore()
-        val lines = (0 until AppStore.MAX_LOGS + 5).map { i ->
+        // Pinned to the literal 1000, not `AppStore.MAX_LOGS` — matches RN's
+        // `logs.slice(-999)` (999 kept + 1 appended = 1000) and iOS's
+        // `AppStore.maxLogs`. A symbolic-only assertion would keep passing if
+        // this constant drifted from those references or was swapped with
+        // MAX_POINTS.
+        val cap = 1000
+        val lines = (0 until cap + 5).map { i ->
             LogLine(ts = "t$i", level = LogLevel.DEBUG, event = "e$i")
         }
 
         lines.forEach { store.appendLog(it) }
 
         val observed = store.logs.value
-        assertEquals(AppStore.MAX_LOGS, observed.size)
-        // Oldest 5 evicted; the buffer keeps the most recent MAX_LOGS entries, in order.
-        assertEquals(lines.takeLast(AppStore.MAX_LOGS), observed)
+        assertEquals(cap, observed.size)
+        // Oldest 5 evicted; the buffer keeps the most recent `cap` entries, in order.
+        assertEquals(lines.takeLast(cap), observed)
         assertEquals("e5", observed.first().event)
-        assertEquals("e${AppStore.MAX_LOGS + 4}", observed.last().event)
+        assertEquals("e${cap + 4}", observed.last().event)
     }
 
     @Test
@@ -58,16 +64,20 @@ class AppStoreTest {
     @Test
     fun `appendPoint evicts the oldest points once the buffer exceeds its cap`() {
         val store = AppStore()
-        val points = (0 until AppStore.MAX_POINTS + 3).map { i ->
+        // Pinned to the literal 2000, not `AppStore.MAX_POINTS` — matches RN's
+        // `points.slice(-1999)` (1999 kept + 1 appended = 2000) and iOS's
+        // `AppStore.maxPoints`. See the matching note on the logs eviction test.
+        val cap = 2000
+        val points = (0 until cap + 3).map { i ->
             Point(latitude = i.toDouble(), longitude = 0.0, timestamp = "t$i")
         }
 
         points.forEach { store.appendPoint(it) }
 
         val observed = store.points.value
-        assertEquals(AppStore.MAX_POINTS, observed.size)
-        // Oldest 3 evicted; the buffer keeps the most recent MAX_POINTS entries, in order.
-        assertEquals(points.takeLast(AppStore.MAX_POINTS), observed)
+        assertEquals(cap, observed.size)
+        // Oldest 3 evicted; the buffer keeps the most recent `cap` entries, in order.
+        assertEquals(points.takeLast(cap), observed)
     }
 
     @Test
