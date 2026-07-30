@@ -126,7 +126,7 @@ data class Config(
     /** Ignore motion-activity updates (motion machine falls back to speed + stationary geofence). Default false. */
     val disableMotionActivityUpdates: Boolean? = null,
     val stopTimeout: Int? = null,
-    /** @platform ios Show the blue background-location indicator. No-op on Android. */
+    /** @platform ios Show the blue background-location pill under Always auth. false + Always also skips the session engine's CLBackgroundActivitySession to hide the pill (beta — needs field tests). No-op on Android. */
     val showsBackgroundLocationIndicator: Boolean? = null,
     val stationaryRadius: Double? = null,
     /** @platform ios Low-power continuous wake distance; independent of the larger region radius. No-op on Android. */
