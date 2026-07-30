@@ -297,6 +297,38 @@ class LogUploaderTest {
         assertFalse(write.message.contains(accessToken))
     }
 
+    // The message scrub is a blind substring replace, so a SHORT value under a
+    // sensitive key must not mangle unrelated text that happens to contain
+    // those characters. `data` is still cleaned by key at any length.
+    @Test
+    fun `a short token value is stripped from data but does not mangle an unrelated message`() {
+        val store = AppStore()
+        val writes = mutableListOf<RecordedWrite>()
+        val uploader = uploader(store, writes)
+        val body = JSONObject().put("token", "12")
+
+        uploader.logEvent("onHttp", LogLevel.INFO, message = "12 points synced", data = body)
+
+        val stored = store.logs.value.single()
+        assertEquals("12 points synced", stored.message)
+        assertEquals("<redacted>", (stored.data as JSONObject).getString("token"))
+    }
+
+    @Test
+    fun `a credential-length token value is still scrubbed out of the message`() {
+        val store = AppStore()
+        val writes = mutableListOf<RecordedWrite>()
+        val uploader = uploader(store, writes)
+        val token = "eyJhbGciOiJIUzI1NiJ9.payload.signature"
+        val body = JSONObject().put("token", token)
+
+        uploader.logEvent("onHttp", LogLevel.INFO, message = "sent with $token", data = body)
+
+        val stored = store.logs.value.single()
+        assertEquals("sent with <redacted>", stored.message)
+        assertFalse(stored.message!!.contains(token))
+    }
+
     @Test
     fun `a non-sensitive field with token-like text in its value is left untouched`() {
         val store = AppStore()

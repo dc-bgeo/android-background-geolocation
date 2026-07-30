@@ -112,9 +112,23 @@ class LogUploader(
  * string too — see [logEvent]'s header note on why `message`/`event` need
  * this on top of the key-based redaction, which only applies to values it
  * can reach through a key.
+ *
+ * Secrets shorter than [MIN_SCRUB_LENGTH] are skipped. This is a blind
+ * substring replace, so a short value under a sensitive key — a stub token in
+ * a fixture, a truncated session id — would otherwise mangle every unrelated
+ * line that happens to contain those characters: a `token` of "12" turns
+ * "12 points synced" into "<redacted> points synced". Real JWTs and OAuth
+ * tokens are far longer than the floor, so nothing worth hiding is let
+ * through; the key-based redaction in [redact] still strips the value from
+ * `data` itself at any length.
  */
 private fun scrub(value: String, secrets: List<String>): String =
-    secrets.fold(value) { acc, secret -> if (secret.isEmpty()) acc else acc.replace(secret, "<redacted>") }
+    secrets.fold(value) { acc, secret ->
+        if (secret.length < MIN_SCRUB_LENGTH) acc else acc.replace(secret, "<redacted>")
+    }
+
+/** See [scrub]. Shorter than any real credential, longer than the incidental strings that collide. */
+private const val MIN_SCRUB_LENGTH = 8
 
 /**
  * Keys whose string value is a credential, never a log-safe value, matched
