@@ -50,17 +50,15 @@ import dev.bgeo.example.AppStore
 import dev.bgeo.example.ConfigCoerce
 import dev.bgeo.example.Geofences
 import dev.bgeo.example.LogLevel
-import dev.bgeo.example.LogLine
+import dev.bgeo.example.LogUploader
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 @Composable
 fun GeofenceFormScreen(
     appStore: AppStore,
     geofences: Geofences,
+    logUploader: LogUploader,
     request: GeofenceRequest,
     onDismiss: () -> Unit,
 ) {
@@ -118,9 +116,7 @@ fun GeofenceFormScreen(
                         extras = null,
                     ),
                 )
-                appStore.appendLog(
-                    LogLine(ts = isoNow(), level = LogLevel.INFO, event = "addGeofence", message = "$trimmedIdentifier r=${displayNumber(radius)}m"),
-                )
+                logUploader.logEvent("addGeofence", LogLevel.INFO, "$trimmedIdentifier r=${displayNumber(radius)}m")
                 onDismiss()
             } catch (e: Exception) {
                 error = e.message ?: e.toString()
@@ -136,7 +132,7 @@ fun GeofenceFormScreen(
         scope.launch {
             try {
                 geofences.remove(fence.identifier)
-                appStore.appendLog(LogLine(ts = isoNow(), level = LogLevel.INFO, event = "removeGeofence", message = fence.identifier))
+                logUploader.logEvent("removeGeofence", LogLevel.INFO, fence.identifier)
                 onDismiss()
             } catch (e: Exception) {
                 error = e.message ?: e.toString()
@@ -230,9 +226,3 @@ private fun SwitchRow(label: String, value: Boolean, onChange: (Boolean) -> Unit
 /** `200.0` displays as `"200"`, matching RN's `String(200)`; a genuine fraction keeps its digits. */
 private fun displayNumber(value: Double): String =
     if (!value.isInfinite() && !value.isNaN() && value == Math.floor(value)) value.toLong().toString() else value.toString()
-
-private fun isoNow(): String {
-    val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-    format.timeZone = TimeZone.getTimeZone("UTC")
-    return format.format(Date())
-}

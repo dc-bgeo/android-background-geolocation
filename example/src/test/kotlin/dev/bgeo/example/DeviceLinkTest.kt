@@ -308,6 +308,93 @@ class DeviceLinkTest {
     }
 
     @Test
+    fun `restore re-applies the stored link to the engine and the store`() = runTest {
+        val storage = InMemoryStorage()
+        storage.putString(
+            "bgeo:link",
+            """{"serverUrl":"https://app.bgeo.dev","deviceId":"d1","accessToken":"at-1","refreshToken":"rt-1"}""",
+        )
+        val applied = mutableListOf<Config>()
+        val store = AppStore()
+        val link = deviceLink(FakeHttp(), storage = storage, store = store, applyConfig = applied)
+
+        val restored = link.restore()
+
+        assertEquals("d1", restored?.deviceId)
+        // Without the re-apply the engine keeps whatever config it last had —
+        // and after a fresh install-and-restore of state it has none, so the
+        // uploader silently stops.
+        assertEquals(1, applied.size)
+        assertEquals("https://app.bgeo.dev/device/locations", applied[0].url)
+        assertEquals("at-1", applied[0].authorization?.accessToken)
+        // The UI must not offer to link a device that is already linked.
+        assertEquals(true, store.link.value.linked)
+        assertEquals("d1", store.link.value.deviceId)
+        assertEquals("https://app.bgeo.dev", store.link.value.serverUrl)
+    }
+
+    @Test
+    fun `restore with nothing stored leaves the store unlinked and pushes no config`() = runTest {
+        val applied = mutableListOf<Config>()
+        val store = AppStore()
+        val link = deviceLink(FakeHttp(), store = store, applyConfig = applied)
+
+        assertNull(link.restore())
+        assertTrue(applied.isEmpty())
+        assertEquals(false, store.link.value.linked)
+    }
+
+    @Test
+    fun `persistRotatedTokens stores the pair the engine rotated to`() = runTest {
+        val storage = InMemoryStorage()
+        storage.putString(
+            "bgeo:link",
+            """{"serverUrl":"https://app.bgeo.dev","deviceId":"d1","accessToken":"at-old","refreshToken":"rt-old"}""",
+        )
+        val link = deviceLink(FakeHttp(), storage = storage)
+
+        link.persistRotatedTokens(
+            JSONObject("""{"success":true,"accessToken":"at-new","refreshToken":"rt-new"}"""),
+        )
+
+        val stored = JSONObject(storage.getString("bgeo:link")!!)
+        assertEquals("at-new", stored.getString("accessToken"))
+        assertEquals("rt-new", stored.getString("refreshToken"))
+        // Everything else survives untouched.
+        assertEquals("d1", stored.getString("deviceId"))
+        assertEquals("https://app.bgeo.dev", stored.getString("serverUrl"))
+    }
+
+    @Test
+    fun `persistRotatedTokens ignores absent and empty token fields`() = runTest {
+        val storage = InMemoryStorage()
+        storage.putString(
+            "bgeo:link",
+            """{"serverUrl":"https://app.bgeo.dev","deviceId":"d1","accessToken":"at-old","refreshToken":"rt-old"}""",
+        )
+        val link = deviceLink(FakeHttp(), storage = storage)
+
+        // A failed refresh: `{success:false}` with no tokens at all, and an
+        // empty-string access token. Neither must overwrite a working pair.
+        link.persistRotatedTokens(JSONObject("""{"success":false}"""))
+        link.persistRotatedTokens(JSONObject("""{"success":true,"accessToken":"","refreshToken":"rt-new"}"""))
+
+        val stored = JSONObject(storage.getString("bgeo:link")!!)
+        assertEquals("at-old", stored.getString("accessToken"))
+        assertEquals("rt-new", stored.getString("refreshToken"))
+    }
+
+    @Test
+    fun `persistRotatedTokens is a no-op when nothing is stored`() = runTest {
+        val storage = InMemoryStorage()
+        val link = deviceLink(FakeHttp(), storage = storage)
+
+        link.persistRotatedTokens(JSONObject("""{"success":true,"accessToken":"at","refreshToken":"rt"}"""))
+
+        assertNull(storage.getString("bgeo:link"))
+    }
+
+    @Test
     fun `unlink clears the config via the CLEAR sentinel, not empty strings`() = runTest {
         val storage = InMemoryStorage()
         storage.putString(

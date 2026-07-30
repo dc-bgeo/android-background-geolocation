@@ -18,10 +18,10 @@ import java.text.SimpleDateFormat
  *
  * A Kotlin port of `react-native/example/src/logUploader.ts`;
  * `ios/Example/Sources/LogUploader.swift` is the same port for iOS. This is
- * meant to become the app's ONLY logging entry point once a later task
- * rewires every screen's own inline `appStore.appendLog` call through here
- * (`MapScreen.kt`/`SettingsScreen.kt` still log directly) — not done in this
- * task; see the task report.
+ * the app's ONLY logging entry point: `ExampleApp.kt`'s event subscriptions
+ * and all three screens go through [logEvent], and nothing calls
+ * `AppStore.appendLog` directly. Keep it that way — a direct `appendLog`
+ * skips both the SDK's persisted log queue and the redaction below.
  *
  * **`Logger.write` hard-codes `event: "app"`** (`sdk/.../Logger.kt`: every
  * write goes through `engine.log(level, "app", message, data, tag, "native")`

@@ -9,8 +9,14 @@
          omits it — declare it here. -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
+    <!-- android:icon is required, not decorative: the engine's
+         foreground-service notification falls back to the app icon, and
+         without one `startForeground` throws and the system kills the process
+         the moment tracking starts. See res/drawable/ic_launcher.xml. -->
     <application
+        android:name=".ExampleApplication"
         android:label="@string/app_name"
+        android:icon="@drawable/ic_launcher"
         android:theme="@style/Theme.BgeoExample"
         android:allowBackup="false">
 

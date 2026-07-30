@@ -9,11 +9,18 @@ package dev.bgeo.example
  * this exact area (see that file's header for the RN/Flutter defaults it had
  * to fix and why).
  *
- * Every `default` below is the LITERAL fallback the ANDROID ENGINE
+ * INVARIANT: every `default` below is the value the engine is ACTUALLY
+ * RUNNING when the user has not overridden that key — i.e.
+ * `ConfigSchema.defaultFor(key)` must equal what `ready()` boots with. For
+ * the six keys `ExampleApp.kt`'s `baseConfig` sets, that is baseConfig's
+ * value; for every other key it is the LITERAL fallback the ANDROID ENGINE
  * (`core/android/engine/src/main/java/com/bgeo/BGGeoEngine.kt`,
- * `BGGeoHttpStore.kt`) uses when a key is absent from `setConfig`/`ready()` —
- * verified by reading the engine source directly (grep + line numbers cited
- * per field below), NOT copied from another console. `core/.superpowers/sdd/
+ * `BGGeoHttpStore.kt`) uses when the key is absent from `setConfig`/`ready()`
+ * — verified by reading the engine source directly (grep + line numbers cited
+ * per field below), NOT copied from another console. `ExampleAppTest` pins
+ * the baseConfig half of that invariant; without it the Settings screen
+ * states a value the engine is not running, and Reset becomes a behaviour
+ * change instead of a revert. `core/.superpowers/sdd/
  * 2026-07-29-native-sdks-phase3-ios-example/rn-flutter-parity-report.md`
  * records the same reconciliation for RN/Flutter; where it agrees with what
  * this file found in the Android engine, the report is cited too. Citations
@@ -268,35 +275,34 @@ object ConfigSchema {
             fields = listOf(
                 // BGGeoEngine.kt:1077 — `?: 60.0`.
                 ConfigField(key = "heartbeatInterval", label = "Heartbeat interval", type = ConfigFieldType.NUMBER, default = 60, unit = "s"),
-                // Engine default false (BGGeoEngine.kt:363 — `?: false`). NOT the
-                // app-level `true` RN/iOS declare in their own schema — that value
-                // is those consoles' own BASE_CONFIG choice (baked into their
-                // `defaultFor`/`configDefault`), not the raw engine fallback. This
-                // task's schema records only the engine fact; an app-level boot
-                // override of this default (if wanted) belongs to a later wiring
-                // task, not here.
-                ConfigField(key = "stopOnTerminate", label = "Stop on terminate", type = ConfigFieldType.BOOL, default = false),
-                // BGGeoEngine.kt:356 — `?: false`.
+                // `true`, because `baseConfig` (ExampleApp.kt) boots with it —
+                // NOT the engine's own `false` fallback (BGGeoEngine.kt:363 —
+                // `?: false`). See this file's header for which of the two a
+                // `default` records now that a base config exists; RN/iOS
+                // declare the same `true` for the same reason.
+                ConfigField(key = "stopOnTerminate", label = "Stop on terminate", type = ConfigFieldType.BOOL, default = true),
+                // BGGeoEngine.kt:356 — `?: false`, and `baseConfig` agrees.
                 ConfigField(key = "startOnBoot", label = "Start on boot", type = ConfigFieldType.BOOL, default = false),
-                // Engine default false (BGGeoEngine.kt:748: `!= true` gate). Same
-                // BASE_CONFIG-vs-engine distinction as `stopOnTerminate` above.
-                ConfigField(key = "debug", label = "Debug sounds", type = ConfigFieldType.BOOL, default = false),
+                // `true` from `baseConfig`, not the engine's `false`
+                // (BGGeoEngine.kt:748: `!= true` gate) — same
+                // baseConfig-vs-engine case as `stopOnTerminate` above.
+                ConfigField(key = "debug", label = "Debug sounds", type = ConfigFieldType.BOOL, default = true),
             ),
         ),
         ConfigSection(
             title = "Diagnostics / Engine",
             fields = listOf(
-                // Engine default 0/OFF (BGGeoEngine.kt:266 — `?: 0`). Same
-                // BASE_CONFIG-vs-engine distinction noted above (RN/iOS's example
-                // apps set logLevel:3 in their own base config, not the engine's
-                // raw fallback).
+                // 3/INFO from `baseConfig`, not the engine's own 0/OFF
+                // fallback (BGGeoEngine.kt:266 — `?: 0`) — same
+                // baseConfig-vs-engine case as `stopOnTerminate`/`debug`
+                // above, and the same value RN/iOS boot with.
                 ConfigField(
                     key = "logLevel", label = "Log level", type = ConfigFieldType.ENUM,
                     options = listOf(
                         ConfigFieldOption("OFF", 0), ConfigFieldOption("ERR", 1), ConfigFieldOption("WARN", 2),
                         ConfigFieldOption("INFO", 3), ConfigFieldOption("DBG", 4), ConfigFieldOption("VERB", 5),
                     ),
-                    default = 0,
+                    default = 3,
                     hint = "native log persistence (mirror to logcat is always on)",
                 ),
                 // BGGeoHttpStore.kt:193 — `?: 3` (then coerced to >= 1).

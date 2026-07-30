@@ -19,6 +19,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -43,12 +44,8 @@ import dev.bgeo.example.ConfigStore
 import dev.bgeo.example.DeviceLink
 import dev.bgeo.example.LinkState
 import dev.bgeo.example.LogLevel
-import dev.bgeo.example.LogLine
+import dev.bgeo.example.LogUploader
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
 
 /**
  * Settings — device link (registration code) and every working SDK config
@@ -69,7 +66,7 @@ import java.util.TimeZone
  *    and recreates its local draft state on every rejection of that key.
  */
 @Composable
-fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: DeviceLink) {
+fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: DeviceLink, logUploader: LogUploader) {
     val overrides by configStore.overrides.collectAsState()
     val link by appStore.link.collectAsState()
     val scope = rememberCoroutineScope()
@@ -79,8 +76,11 @@ fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: Dev
     var fieldErrorToken by remember { mutableIntStateOf(0) }
     var resetError by remember { mutableStateOf<String?>(null) }
 
+    // Through `LogUploader` (see `MapScreen`'s identical note): the SDK's
+    // persisted log queue and `/device/logs` get these lines too, and the
+    // credential scrub applies to every one of them.
     fun log(event: String, message: String, level: LogLevel) {
-        appStore.appendLog(LogLine(ts = isoNow(), level = level, event = event, message = message))
+        logUploader.logEvent(event, level, message)
     }
 
     // Shared by an engine rejection (setValue's catch below) and a
@@ -309,12 +309,29 @@ private fun CommitField(value: String, keyboardType: KeyboardType, onCommit: (St
     // immediately (not waiting on recomposition), makes the second check a
     // no-op.
     var lastCommitted by remember { mutableStateOf(value) }
+    var focused by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
     fun commitIfChanged() {
         if (draft != lastCommitted) {
             lastCommitted = draft
             onCommit(draft)
+        }
+    }
+
+    // Resync when [value] changes from OUTSIDE this field — the Reset button
+    // is the case that matters: it drops every override, so the parent
+    // re-renders with the schema default, but a `remember`ed draft would keep
+    // displaying the old text forever. Found on the emulator: reset cleared
+    // storage and the engine while "Distance filter" still read 50.
+    //
+    // Guarded on focus so it can never yank text out from under an edit in
+    // progress: a live `setConfig` round trip completing mid-typing must not
+    // rewrite the user's draft.
+    LaunchedEffect(value) {
+        if (!focused && value != lastCommitted) {
+            draft = value
+            lastCommitted = value
         }
     }
 
@@ -329,7 +346,10 @@ private fun CommitField(value: String, keyboardType: KeyboardType, onCommit: (St
         }),
         modifier = Modifier
             .width(140.dp)
-            .onFocusChanged { state -> if (!state.isFocused) commitIfChanged() },
+            .onFocusChanged { state ->
+                focused = state.isFocused
+                if (!state.isFocused) commitIfChanged()
+            },
     )
 }
 
@@ -379,10 +399,4 @@ private fun matches(optionValue: Any, current: Any): Boolean = when (optionValue
 private fun displayString(value: Any): String = when (value) {
     is Double -> if (!value.isInfinite() && !value.isNaN() && value == Math.floor(value)) value.toLong().toString() else value.toString()
     else -> value.toString()
-}
-
-private fun isoNow(): String {
-    val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-    format.timeZone = TimeZone.getTimeZone("UTC")
-    return format.format(Date())
 }

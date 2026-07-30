@@ -146,6 +146,59 @@ class DeviceLink(
         )
     }
 
+    /**
+     * Re-apply a previously-persisted link at launch: push the stored server
+     * URL and JWT pair back into the engine's config and mark the store
+     * linked. Returns null when this install has never linked.
+     *
+     * Both references do this on every start (`deviceLink.ts`'s `restoreLink`,
+     * `DeviceLink.swift`'s `restore()`), and it is not optional: without it a
+     * relaunch leaves the engine uploading under a config the UI knows
+     * nothing about — the Settings screen offers to link a device that is
+     * already linked, and the Map screen's status row reads "not linked"
+     * while locations keep flowing to the console.
+     *
+     * Deliberately non-throwing: a launch path must not be able to fail on a
+     * config push. A malformed stored blob already decodes to null via
+     * [loadStoredLink]'s `runCatching`.
+     */
+    suspend fun restore(): StoredLink? {
+        val link = loadStoredLink() ?: return null
+        runCatching { applySdkConfig(link) }
+        store.setLink(serverUrl = link.serverUrl, linked = true, deviceId = link.deviceId)
+        return link
+    }
+
+    /**
+     * Persist the token pair the NATIVE uploader rotated to, announced
+     * through `onAuthorization`. Only overwrites fields actually present (and
+     * non-empty) in [event] — mirrors `deviceLink.ts`'s truthy check
+     * (`if (event?.accessToken)`) and `DeviceLink.swift`'s
+     * `persistRotatedTokens`.
+     *
+     * Without this the app-side `refreshToken` goes stale the moment the
+     * engine performs its first native refresh: location upload keeps
+     * succeeding (the engine holds the fresh pair itself) while every
+     * app-side [authorizedFetch] refresh fails against the server, so
+     * geofence sync and history quietly stop working.
+     *
+     * The caller must ALSO redact this event before logging it — it carries
+     * live JWTs. Persisting and redacting are both required; see
+     * `ExampleApp.kt`'s authorization subscription.
+     */
+    fun persistRotatedTokens(event: JSONObject) {
+        val link = loadStoredLink() ?: return
+        val accessToken = event.stringOrNull("accessToken")?.takeIf { it.isNotEmpty() }
+        val refreshToken = event.stringOrNull("refreshToken")?.takeIf { it.isNotEmpty() }
+        if (accessToken == null && refreshToken == null) return
+        saveStoredLink(
+            link.copy(
+                accessToken = accessToken ?: link.accessToken,
+                refreshToken = refreshToken ?: link.refreshToken,
+            ),
+        )
+    }
+
     /** Exchange a registration code for device tokens and configure the SDK. */
     suspend fun link(serverUrl: String, code: String): StoredLink {
         val uuid = installUuid()

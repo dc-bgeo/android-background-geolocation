@@ -89,7 +89,7 @@ import com.bgeo.sdk.Geofence
 import com.bgeo.sdk.PermissionRequester
 import dev.bgeo.example.AppStore
 import dev.bgeo.example.LogLevel
-import dev.bgeo.example.LogLine
+import dev.bgeo.example.LogUploader
 import dev.bgeo.example.Point
 import dev.bgeo.example.components.CoordinatesSheet
 import dev.bgeo.example.components.DotMarker
@@ -106,10 +106,7 @@ import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 
 /**
  * Task 6 seam: what the geofence form needs to open — a long-press (new
@@ -132,6 +129,7 @@ private const val DEFAULT_LNG = 13.405
 @Composable
 fun MapScreen(
     appStore: AppStore,
+    logUploader: LogUploader,
     permissionRequester: PermissionRequester,
     onGeofenceRequest: (GeofenceRequest) -> Unit = {},
 ) {
@@ -150,8 +148,12 @@ fun MapScreen(
     val scope = rememberCoroutineScope()
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
 
+    // Through `LogUploader`, not `appStore.appendLog` directly: that is what
+    // also persists the line to the SDK's own log queue (surviving app kills)
+    // and uploads it to `/device/logs` once linked — and what applies the
+    // credential scrub to every line by construction.
     fun log(event: String, message: String, level: LogLevel) {
-        appStore.appendLog(LogLine(ts = isoNow(), level = level, event = event, message = message))
+        logUploader.logEvent(event, level, message)
     }
 
     // Mirrors `MapScreen.tsx`'s `onToggleTracking`: `requestPermission` and
@@ -655,9 +657,3 @@ private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(alpha, Color.red
 
 /** Deterministic string form of an ARGB int for [MapRebuild.geofenceKey] — a change-detection key component, never rendered as text. */
 private fun colorHex(color: Int): String = String.format(Locale.US, "#%08X", color)
-
-private fun isoNow(): String {
-    val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-    format.timeZone = TimeZone.getTimeZone("UTC")
-    return format.format(Date())
-}

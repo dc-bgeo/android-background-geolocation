@@ -16,6 +16,7 @@ package dev.bgeo.example.screens
 // `LogsScreenLogicTest` for the coverage. This file is rendering only.
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -157,7 +159,16 @@ private fun Header(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // Scrollable, and weighted so it yields space rather than taking it:
+        // the seven level chips plus follow/clear do not fit one row on a
+        // phone. Found on the emulator — the unweighted row pushed "follow"
+        // and "clear" off-screen entirely (both unreachable) and squashed the
+        // last chip into a one-letter-per-line column.
+        Row(
+            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             LEVEL_OPTIONS.forEach { option ->
                 FilterChip(
                     selected = level == option,

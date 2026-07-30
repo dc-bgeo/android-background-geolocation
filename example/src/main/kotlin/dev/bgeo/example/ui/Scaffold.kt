@@ -24,15 +24,19 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import dev.bgeo.example.R
 
-private enum class ExampleTab(val labelRes: Int, val icon: ImageVector) {
+enum class ExampleTab(val labelRes: Int, val icon: ImageVector) {
     MAP(R.string.tab_map, Icons.Filled.Map),
     LOGS(R.string.tab_logs, Icons.AutoMirrored.Filled.List),
     SETTINGS(R.string.tab_settings, Icons.Filled.Settings),
 }
 
-/** Three-tab console shell: Map, Logs, Settings (order/labels match the other consoles). */
+/**
+ * Three-tab console shell: Map, Logs, Settings (order/labels match the other
+ * consoles). The chrome only — [content] renders the selected tab's screen,
+ * wired in `ExampleApp.kt`.
+ */
 @Composable
-fun ExampleScaffold() {
+fun ExampleScaffold(content: @Composable (ExampleTab) -> Unit) {
     var selected by remember { mutableIntStateOf(0) }
     val tabs = ExampleTab.entries
 
@@ -50,8 +54,8 @@ fun ExampleScaffold() {
             }
         },
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-            Text(stringResource(tabs[selected].labelRes), style = MaterialTheme.typography.headlineSmall)
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            content(tabs[selected])
         }
     }
 }

@@ -1,0 +1,21 @@
+<!-- App icon, and — because the engine falls back to `applicationInfo.icon`
+     when `notification.smallIcon` is unset (BGGeoEngine.kt:544-551) — the
+     foreground-service notification's small icon too.
+
+     A module with no app icon at all is not merely cosmetic here:
+     `applicationInfo.icon` is then 0, `startForeground` rejects the
+     notification as iconless, and the system kills the process the moment
+     tracking starts (`CannotPostForegroundServiceNotificationException`).
+
+     Deliberately one flat silhouette: Android draws the vector as-is in the
+     launcher, and uses only its alpha channel in the notification tray, so a
+     single-path pin reads correctly in both places. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#3A6FF0"
+        android:pathData="M12,2C8.13,2 5,5.13 5,9c0,5.25 7,13 7,13s7,-7.75 7,-13c0,-3.87 -3.13,-7 -7,-7zM12,11.5c-1.38,0 -2.5,-1.12 -2.5,-2.5s1.12,-2.5 2.5,-2.5 2.5,1.12 2.5,2.5 -1.12,2.5 -2.5,2.5z" />
+</vector>
