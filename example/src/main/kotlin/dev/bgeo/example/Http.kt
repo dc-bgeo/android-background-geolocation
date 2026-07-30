@@ -36,7 +36,15 @@ interface Http {
 /** Production [Http] over `java.net.HttpURLConnection`. No new dependency. */
 class HttpUrlConnectionHttp : Http {
     override suspend fun send(request: HttpRequest): HttpResponse = withContext(Dispatchers.IO) {
-        val connection = URL(request.url).openConnection() as HttpURLConnection
+        // URL(String) throws MalformedURLException — an IOException — for a
+        // server URL typed without a scheme, which is exactly the user error
+        // the catch below exists for. It happens during construction, before
+        // that try can see it, so it needs its own.
+        val connection = try {
+            URL(request.url).openConnection() as HttpURLConnection
+        } catch (e: IOException) {
+            throw DeviceLinkError("invalid server URL: ${request.url}")
+        }
         try {
             connection.connectTimeout = TIMEOUT_MS
             connection.readTimeout = TIMEOUT_MS
