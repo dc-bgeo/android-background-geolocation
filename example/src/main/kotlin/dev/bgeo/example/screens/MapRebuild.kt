@@ -1,5 +1,8 @@
 package dev.bgeo.example.screens
 
+import com.bgeo.sdk.Geofence
+import dev.bgeo.example.Point
+
 /**
  * Pure change-detection for the Map screen's osmdroid overlays — no Android
  * imports, so it stays unit-testable under this module's
@@ -33,11 +36,28 @@ package dev.bgeo.example.screens
  * `Overlay`, which this module's harness stubs).
  */
 
-/** Everything that legitimately changes on (almost) every incoming location fix. */
+/**
+ * Everything that legitimately changes on (almost) every incoming location
+ * fix, plus every rendered input that does NOT show up in [pointCount] or
+ * [lastPointKey] but still needs to force a rebuild on its own.
+ *
+ * Fix round 1 found two: [showMarkers]/[showPolylines] used to be collapsed
+ * into one `trackVisible = showMarkers || showPolylines` bit, so toggling
+ * either layer off while the other stayed on left `trackVisible` unchanged
+ * and the layer never disappeared (the toggle only looked like it worked
+ * once an unrelated location fix forced a rebuild anyway). And [isMoving]
+ * — which colours the last-position dot — wasn't in the key at all, so a
+ * `motionchange` with no new accepted fix (e.g. the device just parked)
+ * produced no rebuild and the dot stayed the wrong colour for the entire
+ * stationary period. Both are now their own fields so `decide`'s plain
+ * equality comparison catches them independently.
+ */
 data class TrackSnapshot(
     val pointCount: Int,
     val lastPointKey: String?,
-    val trackVisible: Boolean,
+    val showMarkers: Boolean,
+    val showPolylines: Boolean,
+    val isMoving: Boolean,
 )
 
 /**
@@ -78,4 +98,36 @@ object MapRebuild {
      */
     fun geofenceKey(identifier: String, latitude: Double, longitude: Double, radius: Double, colorHex: String): String =
         "$identifier|$latitude|$longitude|$radius|$colorHex"
+
+    /**
+     * Builds [TrackSnapshot] from the screen's live inputs. Fix round 1:
+     * pulled out of `MapOverlayController.apply()` (a Compose/osmdroid file
+     * with no unit-test seam) precisely because that inline construction is
+     * where the `trackVisible` bug lived — a class of bug that only shows up
+     * again if the key-construction logic is testable in isolation. See
+     * `MapRebuildTest` for the regression coverage this enables.
+     */
+    fun buildTrackSnapshot(points: List<Point>, showMarkers: Boolean, showPolylines: Boolean, isMoving: Boolean): TrackSnapshot =
+        TrackSnapshot(
+            pointCount = points.size,
+            lastPointKey = points.lastOrNull()?.let { it.uuid ?: it.timestamp },
+            showMarkers = showMarkers,
+            showPolylines = showPolylines,
+            isMoving = isMoving,
+        )
+
+    /**
+     * Builds [GeofenceSnapshot] from the live `[Geofence]` list — same
+     * reasoning as [buildTrackSnapshot]. [colorHexFor] stays a caller-supplied
+     * function rather than this file computing the transition colour itself:
+     * that lookup needs to scan `Point` event history, and doing it here
+     * would tempt an Android-colour dependency into a file that must stay
+     * import-free from `android.*` to keep running under this module's
+     * `unitTests.isReturnDefaultValues` harness.
+     */
+    fun buildGeofenceSnapshot(geofences: List<Geofence>, showGeofences: Boolean, colorHexFor: (Geofence) -> String): GeofenceSnapshot =
+        GeofenceSnapshot(
+            geofenceKeys = geofences.map { fence -> geofenceKey(fence.identifier, fence.latitude, fence.longitude, fence.radius, colorHexFor(fence)) },
+            geofencesVisible = showGeofences,
+        )
 }

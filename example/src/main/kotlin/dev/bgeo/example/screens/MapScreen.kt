@@ -188,7 +188,7 @@ fun MapScreen(
         scope.launch {
             try {
                 val location = BackgroundGeolocation.getCurrentPosition(CurrentPositionOptions(samples = 1, timeout = 30.0))
-                log("getCurrentPosition", "%.6f, %.6f".format(location.coords.latitude, location.coords.longitude), LogLevel.INFO)
+                log("getCurrentPosition", String.format(Locale.US, "%.6f, %.6f", location.coords.latitude, location.coords.longitude), LogLevel.INFO)
             } catch (e: Exception) {
                 log("getCurrentPosition", e.message ?: "getCurrentPosition failed", LogLevel.ERROR)
             }
@@ -219,7 +219,7 @@ fun MapScreen(
                 .statusBarsPadding()
                 .padding(10.dp),
         ) {
-            StatusRow(linked = link.linked, deviceId = link.deviceId, ready = status.ready, enabled = status.enabled, isMoving = status.isMoving, batteryLevel = status.batteryLevel, pointCount = points.size)
+            StatusRow(linked = link.linked, deviceId = link.deviceId, isMoving = status.isMoving, batteryLevel = status.batteryLevel, pointCount = points.size)
             Spacer(Modifier.height(8.dp))
             ControlCard(
                 enabled = status.enabled,
@@ -269,8 +269,6 @@ fun MapScreen(
 private fun StatusRow(
     linked: Boolean,
     deviceId: String?,
-    ready: Boolean,
-    enabled: Boolean,
     isMoving: Boolean,
     batteryLevel: Double?,
     pointCount: Int,
@@ -394,17 +392,42 @@ private fun MapViewContainer(
                 })
                 overlays.add(eventsOverlay)
 
-                // Disengages Follow on any direct finger contact, without
-                // relying on `MapListener.onScroll` — that callback fires
-                // for BOTH user drags and our own `controller.animateTo`
-                // calls, and telling them apart needs a flag whose lifecycle
-                // is exactly the class of bug this screen's whole task is
-                // about avoiding (see this file's header). A raw touch-down
-                // is unambiguous: only a real finger on the glass produces
-                // one, so this can't misfire on a programmatic camera move.
+                // Disengages Follow on a real drag, without relying on
+                // `MapListener.onScroll` — that callback fires for BOTH user
+                // drags and our own `controller.animateTo` calls, and telling
+                // them apart needs a flag whose lifecycle is exactly the
+                // class of bug this screen's whole task is about avoiding
+                // (see this file's header). A touch event is unambiguous:
+                // only a real finger on the glass produces one, so this
+                // can't misfire on a programmatic camera move.
+                //
+                // Fix round 1 (F5): firing on raw ACTION_DOWN disengaged
+                // Follow on ANY touch, including a tap on a geofence pin or a
+                // long-press to add one — neither of which pans the camera.
+                // Only call [onUserPan] once the finger has actually moved
+                // past the platform's touch-slop threshold, i.e. a real drag,
+                // not a tap-in-place.
+                val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+                var downX = 0f
+                var downY = 0f
+                var dragged = false
                 setOnTouchListener { _, event ->
-                    if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                        overlayController.onUserPan()
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            downX = event.x
+                            downY = event.y
+                            dragged = false
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            if (!dragged) {
+                                val dx = event.x - downX
+                                val dy = event.y - downY
+                                if (dx * dx + dy * dy > touchSlop * touchSlop) {
+                                    dragged = true
+                                    overlayController.onUserPan()
+                                }
+                            }
+                        }
                     }
                     false // never consume — let the map handle the gesture normally
                 }
@@ -417,8 +440,11 @@ private fun MapViewContainer(
             overlayController.apply(mapView, points, showMarkers, showPolylines, geofences, showGeofences, isMoving)
             if (follow && last != null) {
                 overlayController.applyFollowCamera(mapView, GeoPoint(last.latitude, last.longitude))
+            } else {
+                overlayController.onFollowInactive()
             }
         },
+        onRelease = { mapView -> mapView.onDetach() },
     )
 }
 
@@ -450,18 +476,45 @@ private class MapOverlayController {
     private val geofenceOverlays = mutableListOf<Overlay>()
     private var lastTileSatellite: Boolean? = null
     private var lastFollowTarget: GeoPoint? = null
+    private var followWasActive = false
 
     fun applyTileSource(mapView: MapView, satellite: Boolean) {
         if (lastTileSatellite == satellite) return
         lastTileSatellite = satellite
+        // USGS_SAT is US-only imagery — osmdroid ships no keyless satellite
+        // source with global coverage (checked the whole `TileSourceFactory`
+        // surface), so outside the US this toggle yields blank tiles. No
+        // in-app labelling exists for this FAB; flagged in fix round 1's
+        // report as an accepted, honestly-documented limitation rather than
+        // silently pretending it's global.
         mapView.setTileSource(if (satellite) TileSourceFactory.USGS_SAT else TileSourceFactory.MAPNIK)
     }
 
-    /** Passive re-center while Follow is on — deduped so an unrelated recomposition (e.g. a layer toggle) doesn't re-animate the camera to the same spot. */
+    /**
+     * Passive re-center while Follow is on — deduped so an unrelated
+     * recomposition (e.g. a layer toggle) doesn't re-animate the camera to
+     * the same spot.
+     *
+     * Fix round 1 (F4): the dedupe used to fire even on Follow's re-enable
+     * edge. Panning away auto-disengages Follow (`onUserPan`) without
+     * clearing [lastFollowTarget]; tapping the Follow chip back on then
+     * compared the (unchanged) last-known point against that stale target,
+     * found them equal, and skipped `animateTo` — the chip lit up but the
+     * map stayed wherever the user had panned it until the next fix.
+     * [followWasActive] tracks the edge itself so a re-enable always
+     * recenters at least once, regardless of whether the target moved.
+     */
     fun applyFollowCamera(mapView: MapView, target: GeoPoint) {
-        if (target == lastFollowTarget) return
+        val justEnabled = !followWasActive
+        followWasActive = true
+        if (!justEnabled && target == lastFollowTarget) return
         lastFollowTarget = target
         mapView.controller.animateTo(target)
+    }
+
+    /** Follow is off this tick — reset the re-enable edge so the next [applyFollowCamera] call is treated as a fresh engagement. */
+    fun onFollowInactive() {
+        followWasActive = false
     }
 
     fun apply(
@@ -474,17 +527,10 @@ private class MapOverlayController {
         isMoving: Boolean,
     ) {
         val context = mapView.context
-        val trackSnapshot = TrackSnapshot(
-            pointCount = points.size,
-            lastPointKey = points.lastOrNull()?.let { it.uuid ?: it.timestamp },
-            trackVisible = showMarkers || showPolylines,
-        )
-        val geofenceSnapshot = GeofenceSnapshot(
-            geofenceKeys = geofences.map { fence ->
-                MapRebuild.geofenceKey(fence.identifier, fence.latitude, fence.longitude, fence.radius, colorHex(geofenceColor(points, fence.identifier)))
-            },
-            geofencesVisible = showGeofences,
-        )
+        val trackSnapshot = MapRebuild.buildTrackSnapshot(points, showMarkers, showPolylines, isMoving)
+        val geofenceSnapshot = MapRebuild.buildGeofenceSnapshot(geofences, showGeofences) { fence ->
+            colorHex(geofenceColor(points, fence.identifier))
+        }
 
         val decision = MapRebuild.decide(lastTrackSnapshot, trackSnapshot, lastGeofenceSnapshot, geofenceSnapshot)
         if (!decision.rebuildTrack && !decision.rebuildGeofences) return
@@ -527,6 +573,19 @@ private class MapOverlayController {
                         icon = DotMarker.drawable(context, diameterDp = 8f, fillColor = withAlpha(TRACK_COLOR, 0xCC), borderColor = Color.WHITE, borderWidthDp = 1f)
                         setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                         setInfoWindow(null)
+                        // Fix round 1 (F3): a track dot has no click listener
+                        // of its own, so osmdroid runs `onMarkerClickDefault`
+                        // — show info window (a no-op here), pan the camera,
+                        // and consume the tap (return true) — on whichever
+                        // marker is hit first. The track rebuilds on ~every
+                        // fix and is re-added to the end of `mapView.overlays`
+                        // each time, so it's always hit-tested before an
+                        // older geofence pin underneath it, making that pin
+                        // untappable. Returning false here means "not
+                        // handled", so osmdroid's `OverlayManager` keeps
+                        // walking down to the next overlay instead of
+                        // stopping on this dot.
+                        setOnMarkerClickListener { _, _ -> false }
                     }
                 }
             }
@@ -537,6 +596,7 @@ private class MapOverlayController {
                     icon = DotMarker.drawable(context, diameterDp = 16f, fillColor = fill, borderColor = Color.WHITE, borderWidthDp = 2f)
                     setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                     setInfoWindow(null)
+                    setOnMarkerClickListener { _, _ -> false } // see the comment above
                 }
             }
             mapView.overlays.addAll(trackOverlays)

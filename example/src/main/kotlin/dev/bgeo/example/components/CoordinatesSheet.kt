@@ -192,12 +192,17 @@ object PointFormat {
         )
     }
 
-    fun coordinate(value: Double, digits: Int = 5): String = "%.${digits}f".format(value)
+    // `Locale.US` pinned explicitly (fix round 1, F7): plain `.format(...)`
+    // uses the JVM default locale, which renders the decimal separator as
+    // `,` on comma-decimal locales — the LAT/LNG columns would then read
+    // e.g. `52,52000`. `MapScreen.kt` already pins `Locale.US` for its own
+    // formatting; this brings these two sites in line with that convention.
+    fun coordinate(value: Double, digits: Int = 5): String = String.format(Locale.US, "%.${digits}f", value)
 
     /** RN's `num(v, digits)`: dash for missing or negative values (used for speed, which is never legitimately negative). */
     fun nonNegative(value: Double?, digits: Int): String {
         if (value == null || value < 0) return "–"
-        return "%.${digits}f".format(value)
+        return String.format(Locale.US, "%.${digits}f", value)
     }
 
     /**

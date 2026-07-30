@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
+import java.util.Locale
 import java.util.TimeZone
 
 /**
@@ -19,6 +20,7 @@ import java.util.TimeZone
 class CoordinatesSheetLogicTest {
 
     private lateinit var previousDefault: TimeZone
+    private lateinit var previousLocale: Locale
 
     @Before
     fun fixTimeZone() {
@@ -29,6 +31,21 @@ class CoordinatesSheetLogicTest {
     @After
     fun restoreTimeZone() {
         TimeZone.setDefault(previousDefault)
+    }
+
+    // Fix round 1 (F7): pinned to a comma-decimal locale so a regression that
+    // drops `Locale.US` from `PointFormat.coordinate`/`nonNegative` (e.g.
+    // reverting to plain `.format(...)`) fails these tests instead of
+    // silently passing under a US-default CI/dev machine.
+    @Before
+    fun fixLocale() {
+        previousLocale = Locale.getDefault()
+        Locale.setDefault(Locale.forLanguageTag("pl-PL"))
+    }
+
+    @After
+    fun restoreLocale() {
+        Locale.setDefault(previousLocale)
     }
 
     @Test
