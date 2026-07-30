@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 import com.bgeo.sdk.AuthorizationConfig
 import com.bgeo.sdk.BackgroundGeolocation
 import com.bgeo.sdk.Config
+import org.json.JSONException
 import org.json.JSONObject
 import java.util.UUID
 
@@ -26,7 +27,11 @@ data class StoredLink(
     val deviceId: String,
     val accessToken: String,
     val refreshToken: String,
-)
+) {
+    /** Redacted: this is `link()`'s return value, and Task 7's log uploader means it can end up in a log line. */
+    override fun toString(): String =
+        "StoredLink(serverUrl=$serverUrl, deviceId=$deviceId, accessToken=<redacted>, refreshToken=<redacted>)"
+}
 
 /**
  * Device metadata `DeviceLink` needs for registration. A plain data class
@@ -166,13 +171,17 @@ class DeviceLink(
             throw DeviceLinkError(serverErrorMessage(response.body, response.status, "register"))
         }
 
-        val json = JSONObject(response.body)
-        val link = StoredLink(
-            serverUrl = serverUrl,
-            deviceId = json.getString("device_id"),
-            accessToken = json.getString("access_token"),
-            refreshToken = json.getString("refresh_token"),
-        )
+        val link = try {
+            val json = JSONObject(response.body)
+            StoredLink(
+                serverUrl = serverUrl,
+                deviceId = json.getString("device_id"),
+                accessToken = json.getString("access_token"),
+                refreshToken = json.getString("refresh_token"),
+            )
+        } catch (e: JSONException) {
+            throw DeviceLinkError("register response malformed")
+        }
         saveStoredLink(link)
         applySdkConfig(link)
         store.setLink(serverUrl = serverUrl, linked = true, deviceId = link.deviceId)
@@ -223,11 +232,15 @@ class DeviceLink(
         if (response.status !in 200..299) {
             throw DeviceLinkError(serverErrorMessage(response.body, response.status, "refresh"))
         }
-        val json = JSONObject(response.body)
-        val refreshed = link.copy(
-            accessToken = json.getString("access_token"),
-            refreshToken = json.getString("refresh_token"),
-        )
+        val refreshed = try {
+            val json = JSONObject(response.body)
+            link.copy(
+                accessToken = json.getString("access_token"),
+                refreshToken = json.getString("refresh_token"),
+            )
+        } catch (e: JSONException) {
+            throw DeviceLinkError("refresh response malformed")
+        }
         saveStoredLink(refreshed)
         applySdkConfig(refreshed)
         return refreshed

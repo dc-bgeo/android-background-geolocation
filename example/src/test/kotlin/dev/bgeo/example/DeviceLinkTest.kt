@@ -37,7 +37,8 @@ class DeviceLinkTest {
             ),
         )
         val storage = InMemoryStorage()
-        val link = deviceLink(http, storage = storage)
+        val applied = mutableListOf<Config>()
+        val link = deviceLink(http, storage = storage, applyConfig = applied)
 
         val result = link.link(serverUrl = "https://app.bgeo.dev", code = "  ABC123  ")
 
@@ -65,6 +66,24 @@ class DeviceLinkTest {
         assertEquals("at-1", stored.getString("accessToken"))
         assertEquals("rt-1", stored.getString("refreshToken"))
         assertEquals("dev-1", stored.getString("deviceId"))
+
+        // The SDK config applied on link() — this is what points the native
+        // uploader at the right server with the right bearer token and
+        // refresh wiring. Wrong here means uploads 401 forever once the app
+        // is killed and refresh never fires.
+        assertEquals(1, applied.size)
+        val config = applied[0]
+        assertEquals("https://app.bgeo.dev/device/locations", config.url)
+        assertEquals("https://app.bgeo.dev/device/logs", config.logUrl)
+        assertEquals(true, config.autoSync)
+        assertEquals(true, config.batchSync)
+        assertEquals(50, config.maxBatchSize)
+        val authorization = config.authorization!!
+        assertEquals("JWT", authorization.strategy)
+        assertEquals("at-1", authorization.accessToken)
+        assertEquals("rt-1", authorization.refreshToken)
+        assertEquals("https://app.bgeo.dev/device/auth/refresh", authorization.refreshUrl)
+        assertEquals("{refreshToken}", authorization.refreshPayload?.getString("refresh_token"))
     }
 
     @Test
@@ -149,6 +168,12 @@ class DeviceLinkTest {
 
         assertEquals(3, http.requests.size)
         assertEquals("https://app.bgeo.dev/device/auth/refresh", http.requests[1].url)
+        // The refresh request must carry the refresh token, not the access
+        // token — this is the credential that survives the access token
+        // expiring, and it's what the server's /device/auth/refresh expects.
+        val refreshBody = JSONObject(http.requests[1].body!!)
+        assertEquals("r-old", refreshBody.getString("refresh_token"))
+        assertEquals(1, refreshBody.length())
         assertEquals("Bearer fresh", http.requests[2].headers["Authorization"])
         assertEquals(200, response.status)
         assertEquals("""{"geofences":[]}""", response.body)
@@ -200,6 +225,84 @@ class DeviceLinkTest {
 
         // No retry attempted once the refresh itself failed.
         assertEquals(2, http.requests.size)
+    }
+
+    @Test
+    fun `a non-JSON 2xx register response throws DeviceLinkError, not JSONException`() = runTest {
+        val http = FakeHttp()
+        http.enqueue(HttpResponse(200, "<html>captive portal</html>"))
+        val link = deviceLink(http)
+
+        try {
+            link.link("https://app.bgeo.dev", "code")
+            fail("expected DeviceLinkError")
+        } catch (e: DeviceLinkError) {
+            assertEquals("register response malformed", e.message)
+        }
+    }
+
+    @Test
+    fun `a 2xx register response missing access_token throws DeviceLinkError`() = runTest {
+        val http = FakeHttp()
+        http.enqueue(HttpResponse(200, """{"device_id":"dev-1"}"""))
+        val link = deviceLink(http)
+
+        try {
+            link.link("https://app.bgeo.dev", "code")
+            fail("expected DeviceLinkError")
+        } catch (e: DeviceLinkError) {
+            assertEquals("register response malformed", e.message)
+        }
+    }
+
+    @Test
+    fun `a non-JSON 2xx refresh response throws DeviceLinkError, not JSONException`() = runTest {
+        val storage = InMemoryStorage()
+        storage.putString(
+            "bgeo:link",
+            """{"serverUrl":"https://app.bgeo.dev","deviceId":"d1","accessToken":"stale","refreshToken":"r-old"}""",
+        )
+        val http = FakeHttp()
+        http.enqueue(HttpResponse(401, """{}"""))
+        http.enqueue(HttpResponse(200, "not json"))
+        val link = deviceLink(http, storage = storage)
+
+        try {
+            link.authorizedFetch("/device/geofences")
+            fail("expected DeviceLinkError")
+        } catch (e: DeviceLinkError) {
+            assertEquals("refresh response malformed", e.message)
+        }
+    }
+
+    @Test
+    fun `StoredLink toString redacts both tokens`() {
+        val link = StoredLink(
+            serverUrl = "https://app.bgeo.dev",
+            deviceId = "dev-1",
+            accessToken = "secret-access-token",
+            refreshToken = "secret-refresh-token",
+        )
+
+        val text = link.toString()
+
+        assertTrue(!text.contains("secret-access-token"))
+        assertTrue(!text.contains("secret-refresh-token"))
+    }
+
+    @Test
+    fun `HttpRequest toString redacts the bearer token and the body`() {
+        val request = HttpRequest(
+            method = "POST",
+            url = "https://app.bgeo.dev/device/auth/refresh",
+            headers = mapOf("Authorization" to "Bearer secret-access-token"),
+            body = """{"refresh_token":"secret-refresh-token"}""",
+        )
+
+        val text = request.toString()
+
+        assertTrue(!text.contains("secret-access-token"))
+        assertTrue(!text.contains("secret-refresh-token"))
     }
 
     @Test
