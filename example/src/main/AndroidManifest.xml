@@ -1,0 +1,31 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, ACTIVITY_RECOGNITION, the
+         foreground-service, boot and notification permissions, and INTERNET are
+         already declared by the bgeo-android engine AAR's own merged manifest
+         (see libs/dev/bgeo/bgeo-android/0.13.1/bgeo-android-0.13.1.aar's
+         AndroidManifest.xml). Google Play policy requires the APP, not a
+         library, to declare background location, so the engine deliberately
+         omits it — declare it here. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
+    <application
+        android:label="@string/app_name"
+        android:theme="@style/Theme.BgeoExample"
+        android:allowBackup="false">
+
+        <!-- osmdroid is configured (Task 5) to use this app's private cache
+             directory (Context.cacheDir), so no WRITE_EXTERNAL_STORAGE /
+             READ_EXTERNAL_STORAGE permission is required, even on API < 29. -->
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:theme="@style/Theme.BgeoExample">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -13,3 +13,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "bgeo-android-sdk"
 include(":sdk")
+include(":example")
