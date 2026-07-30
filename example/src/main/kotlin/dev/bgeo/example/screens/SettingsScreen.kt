@@ -83,6 +83,21 @@ fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: Dev
         appStore.appendLog(LogLine(ts = isoNow(), level = level, event = event, message = message))
     }
 
+    // Shared by an engine rejection (setValue's catch below) and a
+    // client-side parse failure (ConfigFieldRow's onRejectParse) — both are
+    // "this field's draft did not become the new value" and both need the
+    // exact same treatment: error next to the field, logged, draft resynced
+    // via rejectionToken. See this file's header for why that machinery
+    // exists.
+    fun rejectField(field: ConfigField, message: String) {
+        fieldErrorToken += 1
+        fieldErrorKey = field.key
+        fieldError = message
+        // Logged on rejection too — a dropped config change must be
+        // visible in the log, not just next to the field.
+        log("setConfig", "${field.key}: $message", LogLevel.ERROR)
+    }
+
     fun setValue(field: ConfigField, raw: Any) {
         scope.launch {
             try {
@@ -93,12 +108,7 @@ fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: Dev
                 }
                 log("setConfig", "${field.key}=$raw", LogLevel.INFO)
             } catch (e: Exception) {
-                fieldErrorToken += 1
-                fieldErrorKey = field.key
-                fieldError = e.message ?: "rejected"
-                // Logged on rejection too — a dropped config change must be
-                // visible in the log, not just next to the field.
-                log("setConfig", "${field.key}: ${e.message}", LogLevel.ERROR)
+                rejectField(field, e.message ?: "rejected")
             }
         }
     }
@@ -128,6 +138,7 @@ fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: Dev
                     error = if (fieldErrorKey == field.key) fieldError else null,
                     rejectionToken = if (fieldErrorKey == field.key) fieldErrorToken else 0,
                     onChange = { setValue(field, it) },
+                    onRejectParse = { message -> rejectField(field, message) },
                 )
             }
         }
@@ -144,6 +155,10 @@ fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: Dev
                         log("setConfig", "reset to defaults", LogLevel.INFO)
                     } catch (e: Exception) {
                         resetError = e.message ?: "reset failed"
+                        // Same rule as a rejected field (see rejectField): a
+                        // dropped config change must show up in the Logs tab,
+                        // not just next to the button that triggered it.
+                        log("setConfig", "reset failed: ${e.message}", LogLevel.ERROR)
                     }
                 }
             },
@@ -239,6 +254,7 @@ private fun ConfigFieldRow(
     error: String?,
     rejectionToken: Int,
     onChange: (Any) -> Unit,
+    onRejectParse: (String) -> Unit,
 ) {
     Column(modifier = Modifier.padding(vertical = 6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -254,7 +270,10 @@ private fun ConfigFieldRow(
                         value = displayString(value),
                         keyboardType = KeyboardType.Number,
                         onCommit = { text ->
-                            ConfigCoerce.numberFromText(text, isIntKind = field.default is Int)?.let { onChange(it) }
+                            when (val decision = decideNumberCommit(text, isIntKind = field.default is Int)) {
+                                is NumberCommitDecision.Accept -> onChange(decision.value)
+                                is NumberCommitDecision.Reject -> onRejectParse(decision.message)
+                            }
                         },
                     )
                 }
@@ -278,20 +297,65 @@ private fun ConfigFieldRow(
 @Composable
 private fun CommitField(value: String, keyboardType: KeyboardType, onCommit: (String) -> Unit) {
     var draft by remember { mutableStateOf(value) }
+    // Tracks the draft as of the last commit — NOT [value]. [value] is a
+    // parameter driven by the parent's `overrides` state and only catches up
+    // to a just-committed change once the parent recomposes; `onDone` below
+    // calls `focusManager.clearFocus()` right after committing, which fires
+    // `onFocusChanged` SYNCHRONOUSLY, before that recomposition happens.
+    // Comparing against `value` there would still see the pre-change
+    // parameter and fire a second, duplicate `onCommit` for the same edit —
+    // two `setConfig` round trips and two identical log lines for one
+    // keyboard "Done". Comparing against `lastCommitted`, which is updated
+    // immediately (not waiting on recomposition), makes the second check a
+    // no-op.
+    var lastCommitted by remember { mutableStateOf(value) }
     val focusManager = LocalFocusManager.current
+
+    fun commitIfChanged() {
+        if (draft != lastCommitted) {
+            lastCommitted = draft
+            onCommit(draft)
+        }
+    }
+
     OutlinedTextField(
         value = draft,
         onValueChange = { draft = it },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         keyboardActions = KeyboardActions(onDone = {
-            if (draft != value) onCommit(draft)
+            commitIfChanged()
             focusManager.clearFocus()
         }),
         modifier = Modifier
             .width(140.dp)
-            .onFocusChanged { state -> if (!state.isFocused && draft != value) onCommit(draft) },
+            .onFocusChanged { state -> if (!state.isFocused) commitIfChanged() },
     )
+}
+
+/**
+ * Decision for a NUMBER field's committed draft text, pulled out of the
+ * composable so it is unit-testable — this module has no Compose
+ * instrumentation harness (see this file's header). Either an accepted
+ * numeric value to push through [ConfigStore.setOverride], or an error to
+ * show/log in place of that call — the parse-failure counterpart to an
+ * engine rejection. `"1e400"` is the concrete case this exists for: it
+ * parses as a Double, comes out infinite, and [ConfigCoerce.numberFromText]
+ * correctly returns null for it — this turns that null into a decision
+ * instead of it being silently dropped by the caller.
+ */
+internal sealed class NumberCommitDecision {
+    data class Accept(val value: Any) : NumberCommitDecision()
+    data class Reject(val message: String) : NumberCommitDecision()
+}
+
+internal fun decideNumberCommit(text: String, isIntKind: Boolean): NumberCommitDecision {
+    val parsed = ConfigCoerce.numberFromText(text, isIntKind)
+    return if (parsed != null) {
+        NumberCommitDecision.Accept(parsed)
+    } else {
+        NumberCommitDecision.Reject("not a valid number: \"$text\"")
+    }
 }
 
 @Composable

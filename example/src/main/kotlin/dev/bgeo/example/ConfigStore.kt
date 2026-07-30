@@ -45,9 +45,6 @@ class ConfigStore(
     /** Flat, dot-keyed overrides (e.g. `"notification.priority"`), exactly as the schema declares them. */
     val overrides: StateFlow<Map<String, Any>> = _overrides.asStateFlow()
 
-    /** The value shown for `field`: its override if one exists, else the schema default. */
-    fun currentValue(field: ConfigField): Any = _overrides.value[field.key] ?: field.default
-
     private fun loadOverrides(): Map<String, Any> {
         val raw = storage.getString(STORAGE_KEY) ?: return emptyMap()
         val json = try {
