@@ -147,8 +147,17 @@ private fun JSONObject.boolOrNull(key: String): Boolean? =
  * `isoNow()`. Returns `null` (never throws) for anything else, so a
  * malformed timestamp drops that one point from a range filter rather than
  * crashing the whole screen.
+ *
+ * `internal`, not `private`: every existing test only calls this indirectly
+ * through [History.filterPointsByRange]/[History.load], both of which apply
+ * the SAME offset to every timestamp they parse in a single call, so a
+ * dropped `TimeZone.getTimeZone("UTC")` pin here would shift every point and
+ * every `from`/`to` bound by the same amount and cancel out of every
+ * relative/inclusion assertion — see `HistoryTest`'s `parseIsoMillis`-level
+ * test, which needs to call this directly against an independently-computed
+ * `java.time.Instant` reference to actually catch that regression.
  */
-private fun parseIsoMillis(value: String): Long? {
+internal fun parseIsoMillis(value: String): Long? {
     for (pattern in ISO_PATTERNS) {
         val format = SimpleDateFormat(pattern, Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")

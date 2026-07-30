@@ -2,12 +2,42 @@ package dev.bgeo.example
 
 import kotlinx.coroutines.test.runTest
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import java.time.Instant
+import java.util.Locale
+import java.util.TimeZone
 
 class HistoryTest {
+
+    private lateinit var previousTimeZone: TimeZone
+    private lateinit var previousLocale: Locale
+
+    // Fix round 1 (F7 review): same convention as `CoordinatesSheetLogicTest`
+    // — pin the JVM default Locale/TimeZone away from US/UTC. On its own
+    // this does NOT make `filterPointsByRange`/`load`'s relative
+    // inclusion/exclusion assertions below bite a dropped `parseIsoMillis`
+    // UTC pin (the same offset applied to every point AND every from/to
+    // bound cancels out of any relative comparison) — see the dedicated
+    // `parseIsoMillis` test below, which calls the parser directly against
+    // an independent reference instead.
+    @Before
+    fun pinLocaleAndTimeZone() {
+        previousTimeZone = TimeZone.getDefault()
+        previousLocale = Locale.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Kolkata"))
+        Locale.setDefault(Locale.forLanguageTag("pl-PL"))
+    }
+
+    @After
+    fun restoreLocaleAndTimeZone() {
+        TimeZone.setDefault(previousTimeZone)
+        Locale.setDefault(previousLocale)
+    }
 
     private val linkedStorage = InMemoryStorage().apply {
         putString(
@@ -25,6 +55,36 @@ class HistoryTest {
     )
 
     private fun point(uuid: String, ts: String) = Point(uuid = uuid, latitude = 1.0, longitude = 2.0, timestamp = ts)
+
+    // ---- parseIsoMillis (Important 3, F7 review) ----
+
+    // Every `filterPointsByRange`/`load` test below is a RELATIVE comparison
+    // between values that all went through `parseIsoMillis`, so a dropped
+    // `TimeZone.getTimeZone("UTC")` pin shifts every one of them by the same
+    // host-default offset and cancels out of every `>=`/`<=` assertion —
+    // none of them would catch that regression. This test instead calls
+    // `parseIsoMillis` (widened from `private` to `internal` for exactly
+    // this) directly and checks its output against `java.time.Instant`, a
+    // parser that is unaffected by the JVM default time zone by
+    // construction, so this bites regardless of what cancels elsewhere.
+    //
+    // Verified by temporarily deleting `parseIsoMillis`'s
+    // `timeZone = TimeZone.getTimeZone("UTC")` line: with the JVM default
+    // pinned to Asia/Kolkata (+05:30, above), the parsed value comes out
+    // exactly 5.5 hours (19_800_000ms) off from the `Instant` reference and
+    // `assertEquals` fails. Restored immediately after confirming the
+    // failure.
+    @Test
+    fun `parseIsoMillis parses a Z-suffixed timestamp as true UTC regardless of the JVM default time zone`() {
+        val iso = "2026-07-15T12:30:45.123Z"
+        assertEquals(Instant.parse(iso).toEpochMilli(), parseIsoMillis(iso))
+    }
+
+    @Test
+    fun `parseIsoMillis also parses the whole-second pattern as true UTC`() {
+        val iso = "2026-07-15T12:30:45Z"
+        assertEquals(Instant.parse(iso).toEpochMilli(), parseIsoMillis(iso))
+    }
 
     // ---- filterPointsByRange (pure) ----
 

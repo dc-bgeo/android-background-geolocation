@@ -34,17 +34,32 @@ import java.text.SimpleDateFormat
  * constraint on that platform.
  *
  * **Redaction, built in from the start — not left to future call sites.**
- * [redact] strips any `accessToken`/`refreshToken` value out of [data]
- * before it reaches EITHER `store.appendLog` or the SDK's persisted log
- * queue, recursively, so a nested object/array can't smuggle a token past
- * it. A later task will wire `BackgroundGeolocation.onAuthorization`'s raw
+ * [redact] strips any [SENSITIVE_KEYS] string value out of [data] before it
+ * reaches EITHER `store.appendLog` or the SDK's persisted log queue,
+ * recursively, so a nested object/array can't smuggle a credential past it.
+ * A later task will wire `BackgroundGeolocation.onAuthorization`'s raw
  * `{success, accessToken, refreshToken}` event body straight into this
  * function's `data` parameter; on both the iOS and RN consoles that body
  * reached the on-device log, the `/device/logs` upload, and the Logs
  * screen's UI verbatim before it was caught and patched at the call site.
  * Redacting here instead means no future call site has to remember to do it
- * — see `LogUploaderTest` for the test that proves the raw token strings
- * never appear in either sink.
+ * for `data` — see `LogUploaderTest` for the test that proves the raw token
+ * strings never appear in either sink.
+ *
+ * **What this does NOT cover on its own: free-text `message`/`event`.**
+ * Neither reference client redacts inside `logEvent` at all — iOS's fix is
+ * call-site-specific, guarding only `onAuthorization`'s payload before it's
+ * ever passed in. This function protects every call site by construction
+ * instead, but only for values it can identify by *key* — a plain `String`
+ * has no key. So [logEvent] also scrubs, verbatim, every literal value
+ * [redact]/[redactArray] found and replaced in [data] out of [message] and
+ * [event] too (`secrets` below): a call site that echoes the same token into
+ * a human-readable message (e.g. `"refreshed: $accessToken"` where the same
+ * `accessToken` is also present in `data`) doesn't leak it that way either.
+ * What it still can't catch: a secret that appears ONLY in `message`/`event`
+ * and never in `data` — there's no key there to match against. Call sites
+ * should keep secrets out of free text entirely, the same convention the
+ * reference clients follow (`"refreshed"`, never the token itself).
  */
 class LogUploader(
     private val store: AppStore,
@@ -80,22 +95,53 @@ class LogUploader(
      * `data` parameter.
      */
     fun logEvent(event: String, level: LogLevel, message: String? = null, data: JSONObject? = null) {
-        val redacted = data?.let(::redact)
-        store.appendLog(LogLine(ts = isoTimestamp(), level = level, event = event, message = message, data = redacted))
-        val payload = JSONObject().put("event", event)
+        val secrets = mutableListOf<String>()
+        val redacted = data?.let { redact(it, secrets) }
+        val safeEvent = scrub(event, secrets)
+        val safeMessage = message?.let { scrub(it, secrets) }
+        store.appendLog(LogLine(ts = isoTimestamp(), level = level, event = safeEvent, message = safeMessage, data = redacted))
+        val payload = JSONObject().put("event", safeEvent)
         redacted?.let { payload.put("data", it) }
-        write(level, message ?: event, payload)
+        write(level, safeMessage ?: safeEvent, payload)
     }
 }
 
 /**
- * Keys whose string value is a credential, never a log-safe value —
- * camelCase (the shape `BackgroundGeolocation.onAuthorization` emits) and
- * snake_case (the shape the server API and `StoredLink`'s own persisted JSON
- * use), so either naming convention is caught regardless of which one a
- * future call site happens to pass through untouched.
+ * Removes every literal value [redact]/[redactArray] found and replaced in
+ * `data` (collected into `secrets` as they're found) from an unrelated free
+ * string too — see [logEvent]'s header note on why `message`/`event` need
+ * this on top of the key-based redaction, which only applies to values it
+ * can reach through a key.
  */
-private val SENSITIVE_KEYS = setOf("accesstoken", "refreshtoken", "access_token", "refresh_token")
+private fun scrub(value: String, secrets: List<String>): String =
+    secrets.fold(value) { acc, secret -> if (secret.isEmpty()) acc else acc.replace(secret, "<redacted>") }
+
+/**
+ * Keys whose string value is a credential, never a log-safe value, matched
+ * on the FULL key name (case-insensitive, `_` stripped) so `accessToken`,
+ * `access_token` and `ACCESS_TOKEN` are all one entry — camelCase (the shape
+ * `BackgroundGeolocation.onAuthorization`/`onProviderChange` emit),
+ * snake_case (the server API and `StoredLink`'s own persisted JSON) and the
+ * bare/HTTP-header spellings a later task's `onHttp`/headers-map
+ * subscriptions can carry (`token`, `Authorization`, `bearer`, `id_token`/
+ * `idToken`, `jwt`).
+ *
+ * **Whole-key match, deliberately not substring/prefix/suffix.** A future
+ * subscription's diagnostic fields can legitimately contain "token" or
+ * "authorization" as part of a longer, unrelated name —
+ * `onProviderChange`'s real `accuracyAuthorization` field is exactly this,
+ * and a hypothetical `tokenCount` would be another. Matching on
+ * `key.contains("token")` would redact both into uselessness; the whole-key
+ * match after normalizing case/`_` only fires when the key IS one of these
+ * names, not merely contains one. See `LogUploaderTest` for both directions:
+ * every spelling here redacted, `accuracyAuthorization`/`tokenCount`
+ * preserved verbatim.
+ */
+private val SENSITIVE_KEYS = setOf(
+    "accesstoken", "refreshtoken", "idtoken", "token", "authorization", "bearer", "jwt",
+)
+
+private fun isSensitiveKey(key: String): Boolean = key.lowercase(Locale.US).replace("_", "") in SENSITIVE_KEYS
 
 /**
  * Deep copy of [json] with every [SENSITIVE_KEYS] string value replaced by a
@@ -103,9 +149,11 @@ private val SENSITIVE_KEYS = setOf("accesstoken", "refreshtoken", "access_token"
  * was a token here" signal the redacted line is supposed to preserve, e.g.
  * `DeviceLink.kt`'s `StoredLink.toString()` keeps the same
  * `accessToken=<redacted>` shape). Nested objects/arrays are walked
- * recursively so a token can't hide one level down.
+ * recursively so a token can't hide one level down. Every raw value replaced
+ * this way is appended to [secrets] so [LogUploader.logEvent] can also strip
+ * it out of the free-text `message`/`event` it writes alongside `data`.
  */
-private fun redact(json: JSONObject): JSONObject {
+private fun redact(json: JSONObject, secrets: MutableList<String>): JSONObject {
     val result = JSONObject()
     val keys = json.keys()
     while (keys.hasNext()) {
@@ -114,9 +162,12 @@ private fun redact(json: JSONObject): JSONObject {
         result.put(
             key,
             when {
-                value is String && key.lowercase(Locale.US) in SENSITIVE_KEYS -> "<redacted>"
-                value is JSONObject -> redact(value)
-                value is JSONArray -> redactArray(value)
+                value is String && isSensitiveKey(key) -> {
+                    secrets += value
+                    "<redacted>"
+                }
+                value is JSONObject -> redact(value, secrets)
+                value is JSONArray -> redactArray(value, secrets)
                 else -> value
             },
         )
@@ -124,12 +175,12 @@ private fun redact(json: JSONObject): JSONObject {
     return result
 }
 
-private fun redactArray(array: JSONArray): JSONArray {
+private fun redactArray(array: JSONArray, secrets: MutableList<String>): JSONArray {
     val result = JSONArray()
     for (i in 0 until array.length()) {
         when (val value = array.opt(i)) {
-            is JSONObject -> result.put(redact(value))
-            is JSONArray -> result.put(redactArray(value))
+            is JSONObject -> result.put(redact(value, secrets))
+            is JSONArray -> result.put(redactArray(value, secrets))
             else -> result.put(value)
         }
     }

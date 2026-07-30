@@ -57,6 +57,7 @@ import dev.bgeo.example.ui.Mono
 import dev.bgeo.example.ui.Palette
 import dev.bgeo.example.ui.Scheme
 import dev.bgeo.example.ui.ThemeColors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
 /** `LogsScreen.tsx`'s `NATIVE_POLL_MS`. */
@@ -84,6 +85,12 @@ fun LogsScreen(appStore: AppStore) {
             try {
                 val entries = BackgroundGeolocation.getLog(NATIVE_FETCH_LIMIT)
                 nativeLines = nativeLogEntries(entries).map(::logLineFromEntry)
+            } catch (e: CancellationException) {
+                // The composable left composition (or the coroutine scope
+                // was otherwise cancelled) — let cancellation propagate
+                // instead of swallowing it as a "fetch failed, retry next
+                // tick" case.
+                throw e
             } catch (e: Exception) {
                 // Native log fetch failed this tick — keep the previous
                 // lines and retry on the next poll, same as RN's

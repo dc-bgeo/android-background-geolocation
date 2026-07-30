@@ -1,11 +1,17 @@
 package dev.bgeo.example
 
+import org.json.JSONArray
 import org.json.JSONObject
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.TimeZone
 
 /**
  * [LogUploader.logEvent] must (1) actually carry its `data` payload through
@@ -18,6 +24,31 @@ import org.junit.Test
  * these.
  */
 class LogUploaderTest {
+
+    private lateinit var previousTimeZone: TimeZone
+    private lateinit var previousLocale: Locale
+
+    // Fix round 1 (F7 review): same convention as
+    // `CoordinatesSheetLogicTest` — pin the JVM default Locale/TimeZone away
+    // from US/UTC so a regression that drops `isoTimestamp()`'s own explicit
+    // `Locale.US`/UTC pin (falling back to whatever `Locale`/`TimeZone`
+    // default the JVM happens to have) fails a test instead of silently
+    // passing because the dev/CI machine's default already happens to be
+    // UTC. "Asia/Kolkata" (UTC+05:30, no DST) is used instead of a
+    // DST-observing zone so the offset is a fixed, unambiguous constant.
+    @Before
+    fun pinLocaleAndTimeZone() {
+        previousTimeZone = TimeZone.getDefault()
+        previousLocale = Locale.getDefault()
+        TimeZone.setDefault(TimeZone.getTimeZone("Asia/Kolkata"))
+        Locale.setDefault(Locale.forLanguageTag("pl-PL"))
+    }
+
+    @After
+    fun restoreLocaleAndTimeZone() {
+        TimeZone.setDefault(previousTimeZone)
+        Locale.setDefault(previousLocale)
+    }
 
     private class RecordedWrite(val level: LogLevel, val message: String, val data: JSONObject?)
 
@@ -81,6 +112,32 @@ class LogUploaderTest {
         LogLevel.entries.forEach { level -> uploader.logEvent("e", level) }
 
         assertEquals(LogLevel.entries, writes.map { it.level })
+    }
+
+    // Fix round 1 (F7 review, Important 3): `isoTimestamp()` pins
+    // `Locale.US` + UTC internally regardless of the JVM default (pinned to
+    // `pl-PL`/`Asia/Kolkata` above). This asserts on `ts`'s actual value —
+    // parsed back with an independent UTC formatter and checked against a
+    // tight real-clock window — which no prior test in this file did.
+    // Verified by temporarily deleting `isoTimestamp()`'s
+    // `format.timeZone = TimeZone.getTimeZone("UTC")` line: `ts` then
+    // renders Kolkata (+05:30) wall-clock time with a literal `Z` suffix,
+    // landing ~5.5h outside the window below, and this test fails. Restored
+    // immediately after confirming the failure.
+    @Test
+    fun `logEvent stamps ts as true UTC regardless of the JVM default time zone`() {
+        val store = AppStore()
+        val writes = mutableListOf<RecordedWrite>()
+        val uploader = uploader(store, writes)
+        val before = System.currentTimeMillis()
+
+        uploader.logEvent("start", LogLevel.INFO)
+
+        val after = System.currentTimeMillis()
+        val ts = store.logs.value.single().ts
+        val parser = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
+        val parsedMillis = parser.parse(ts)!!.time
+        assertTrue(parsedMillis in (before - 2_000)..(after + 2_000))
     }
 
     // ---- redaction: the two things that matter most ----
@@ -149,6 +206,95 @@ class LogUploaderTest {
         val storedText = stored.toString()
         assertFalse(storedText.contains(refreshToken))
         assertEquals("<redacted>", stored.getJSONObject("tokens").getString("refresh_token"))
+    }
+
+    // Minor 4 (F7 review): the only prior nested-token test nested inside a
+    // `JSONObject`, never a `JSONArray` element, so `redactArray`
+    // (`LogUploader.kt`) was correct on inspection but unproven by a test.
+    @Test
+    fun `a token nested inside a JSONArray element is also redacted`() {
+        val store = AppStore()
+        val writes = mutableListOf<RecordedWrite>()
+        val uploader = uploader(store, writes)
+        val accessToken = "secret-in-an-array-element"
+        val body = JSONObject().put("sessions", JSONArray().put(JSONObject().put("accessToken", accessToken)))
+
+        uploader.logEvent("someEvent", LogLevel.INFO, data = body)
+
+        val stored = store.logs.value.single().data as JSONObject
+        val storedText = stored.toString()
+        assertFalse(storedText.contains(accessToken))
+        assertEquals("<redacted>", stored.getJSONArray("sessions").getJSONObject(0).getString("accessToken"))
+    }
+
+    // ---- Important 2 (F7 review): widened key matching, both directions ----
+
+    @Test
+    fun `a bare 'token' key, 'Authorization' header, 'bearer', 'jwt' and 'id_token'-'idToken' are all redacted`() {
+        val store = AppStore()
+        val writes = mutableListOf<RecordedWrite>()
+        val uploader = uploader(store, writes)
+        val body = JSONObject()
+            .put("token", "secret-token")
+            .put("headers", JSONObject().put("Authorization", "Bearer secret-bearer-value"))
+            .put("bearer", "secret-bearer-2")
+            .put("jwt", "secret-jwt")
+            .put("id_token", "secret-id-token-1")
+            .put("idToken", "secret-id-token-2")
+
+        uploader.logEvent("onHttp", LogLevel.DEBUG, data = body)
+
+        val stored = store.logs.value.single().data as JSONObject
+        assertEquals("<redacted>", stored.getString("token"))
+        assertEquals("<redacted>", stored.getJSONObject("headers").getString("Authorization"))
+        assertEquals("<redacted>", stored.getString("bearer"))
+        assertEquals("<redacted>", stored.getString("jwt"))
+        assertEquals("<redacted>", stored.getString("id_token"))
+        assertEquals("<redacted>", stored.getString("idToken"))
+    }
+
+    // The false-positive direction matters as much as the true-positive one
+    // — these are real/plausible diagnostic field names (`accuracyAuthorization`
+    // is `onProviderChange`'s actual field) that merely CONTAIN "token" or
+    // "authorization" as part of a longer name. A substring/contains match
+    // would redact them into uselessness; the Logs tab exists to show
+    // exactly this kind of diagnostic.
+    @Test
+    fun `keys that merely contain 'token' or 'authorization' as part of a longer name are left untouched`() {
+        val store = AppStore()
+        val writes = mutableListOf<RecordedWrite>()
+        val uploader = uploader(store, writes)
+        val body = JSONObject()
+            .put("tokenCount", 3)
+            .put("authorizationStatus", "granted")
+            .put("accuracyAuthorization", "full")
+
+        uploader.logEvent("onProviderChange", LogLevel.WARN, data = body)
+
+        val stored = store.logs.value.single().data as JSONObject
+        assertEquals(3, stored.getInt("tokenCount"))
+        assertEquals("granted", stored.getString("authorizationStatus"))
+        assertEquals("full", stored.getString("accuracyAuthorization"))
+    }
+
+    // Important 1 (F7 review): a call site that echoes the same token into a
+    // human-readable `message` (instead of iOS's literal "refreshed") must
+    // not leak it there just because `data` was cleaned.
+    @Test
+    fun `a token echoed into message is scrubbed there too, once it's known sensitive from data`() {
+        val store = AppStore()
+        val writes = mutableListOf<RecordedWrite>()
+        val uploader = uploader(store, writes)
+        val accessToken = "leaked-if-message-not-scrubbed"
+        val body = JSONObject().put("accessToken", accessToken)
+
+        uploader.logEvent("onAuthorization", LogLevel.INFO, message = "refreshed: $accessToken", data = body)
+
+        val stored = store.logs.value.single()
+        assertFalse(stored.message!!.contains(accessToken))
+        assertEquals("refreshed: <redacted>", stored.message)
+        val write = writes.single()
+        assertFalse(write.message.contains(accessToken))
     }
 
     @Test
