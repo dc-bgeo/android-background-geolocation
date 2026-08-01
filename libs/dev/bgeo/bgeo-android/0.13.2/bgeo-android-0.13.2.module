@@ -3,7 +3,7 @@
   "component": {
     "group": "dev.bgeo",
     "module": "bgeo-android",
-    "version": "0.13.1",
+    "version": "0.13.2",
     "attributes": {
       "org.gradle.status": "release"
     }
@@ -47,13 +47,13 @@
       ],
       "files": [
         {
-          "name": "bgeo-android-0.13.1.aar",
-          "url": "bgeo-android-0.13.1.aar",
-          "size": 318081,
-          "sha512": "491ea8b5f0777b5405f6dc77f15fc25f91dcd7c2346eb984e7fa38d3123dd5d171346fc916bf29a4ccef1262bf2ffd803b87ba8360800a37aaa017b080ed7553",
-          "sha256": "fa4a9904346ab11ad07262ef86a6808d639f5cb0d36dec9b00b16581ef50de9f",
-          "sha1": "8b8a5e40a2b4e391ea7bb48be4315e30f872ad7d",
-          "md5": "9d0708eddf6b001207551e48955d8b7b"
+          "name": "bgeo-android-0.13.2.aar",
+          "url": "bgeo-android-0.13.2.aar",
+          "size": 319692,
+          "sha512": "9fc84396f256224effd3c54812312aa3448d57e350be38f7f675787c6832feba0703193035c0c6b6a440e893856eb3fdbf62507b30414fee60e55070555d855d",
+          "sha256": "17c88f88f6d045f9631c3700c885f33eef0de8c1e26d468dc05fdd3e2c44371e",
+          "sha1": "dc7965308642cbf09050f896d12a9536e2f849e9",
+          "md5": "ea89784c132761efdb31cdbd110c0bda"
         }
       ]
     },
@@ -97,13 +97,13 @@
       ],
       "files": [
         {
-          "name": "bgeo-android-0.13.1.aar",
-          "url": "bgeo-android-0.13.1.aar",
-          "size": 318081,
-          "sha512": "491ea8b5f0777b5405f6dc77f15fc25f91dcd7c2346eb984e7fa38d3123dd5d171346fc916bf29a4ccef1262bf2ffd803b87ba8360800a37aaa017b080ed7553",
-          "sha256": "fa4a9904346ab11ad07262ef86a6808d639f5cb0d36dec9b00b16581ef50de9f",
-          "sha1": "8b8a5e40a2b4e391ea7bb48be4315e30f872ad7d",
-          "md5": "9d0708eddf6b001207551e48955d8b7b"
+          "name": "bgeo-android-0.13.2.aar",
+          "url": "bgeo-android-0.13.2.aar",
+          "size": 319692,
+          "sha512": "9fc84396f256224effd3c54812312aa3448d57e350be38f7f675787c6832feba0703193035c0c6b6a440e893856eb3fdbf62507b30414fee60e55070555d855d",
+          "sha256": "17c88f88f6d045f9631c3700c885f33eef0de8c1e26d468dc05fdd3e2c44371e",
+          "sha1": "dc7965308642cbf09050f896d12a9536e2f849e9",
+          "md5": "ea89784c132761efdb31cdbd110c0bda"
         }
       ]
     }
