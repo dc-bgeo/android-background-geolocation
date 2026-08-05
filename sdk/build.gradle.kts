@@ -2,10 +2,14 @@ plugins {
     id("com.android.library") version "8.13.0"
     id("org.jetbrains.kotlin.android") version "2.1.20"
     `maven-publish`
+    signing
 }
 
 group = "dev.bgeo"
 version = "0.1.0"
+
+/** Public repository — POM `url`/`scm` and the licence links all point here. */
+val PROJECT_URL = "https://github.com/dc-bgeo/android-background-geolocation"
 
 android {
     // The engine AAR owns the "com.bgeo" namespace (R class, manifest
@@ -45,11 +49,15 @@ android {
     }
 
     publishing {
-        // Pin now, before anything is published, so a later phase-2
-        // maven-publish setup can't default to `dev.bgeo:sdk` (group +
-        // this module's Gradle path/name) — the plan's coordinate is
-        // `dev.bgeo:background-geolocation`, set explicitly below.
-        singleVariant("release")
+        // Pinned before anything was published, so this can't default to
+        // `dev.bgeo:sdk` (group + this module's Gradle path/name) — the
+        // coordinate is `dev.bgeo:background-geolocation`, set explicitly
+        // below. Sources and javadoc are Maven Central requirements; unlike
+        // the closed engine, this facade publishes its REAL sources.
+        singleVariant("release") {
+            withSourcesJar()
+            withJavadocJar()
+        }
     }
 }
 
@@ -64,9 +72,64 @@ afterEvaluate {
                 from(components["release"])
                 groupId = "dev.bgeo"
                 artifactId = "background-geolocation"
-                version = "0.1.0"
+                version = project.version.toString()
+
+                pom {
+                    name.set("BGeo Android SDK")
+                    description.set(
+                        "Background geolocation for native Android: significant-motion tracking " +
+                            "that survives process death, geofencing, a durable upload queue, and " +
+                            "the same API surface as the BGeo React Native and Flutter SDKs.",
+                    )
+                    url.set(PROJECT_URL)
+                    // Two licences, deliberately both: this facade's own source
+                    // is MIT, but it cannot run without the proprietary engine
+                    // AAR it pulls in transitively. A consumer reading only the
+                    // POM has to see both halves.
+                    licenses {
+                        license {
+                            name.set("MIT License (Part A — this facade)")
+                            url.set("$PROJECT_URL/blob/main/LICENSE.md")
+                            distribution.set("repo")
+                        }
+                        license {
+                            name.set("BGeo SDK License, Part B (proprietary — the engine binary)")
+                            url.set("$PROJECT_URL/blob/main/LICENSE.md")
+                            distribution.set("repo")
+                        }
+                    }
+                    developers {
+                        developer {
+                            name.set("BGeo")
+                            url.set("https://bgeo.dev")
+                        }
+                    }
+                    scm {
+                        url.set(PROJECT_URL)
+                        connection.set("scm:git:$PROJECT_URL.git")
+                        developerConnection.set("scm:git:ssh://git@github.com/dc-bgeo/android-background-geolocation.git")
+                    }
+                }
             }
         }
+        repositories {
+            // Staging area for a Central Portal bundle — see
+            // tools/central-bundle.sh. Never a live remote: the bundle is
+            // uploaded explicitly and the portal holds it until a human
+            // presses Publish.
+            maven {
+                name = "CentralStaging"
+                url = uri(layout.buildDirectory.dir("central-staging"))
+            }
+        }
+    }
+
+    signing {
+        // Only arms for the Central staging publication — a local build on a
+        // machine with no signing key must keep working.
+        setRequired({ gradle.taskGraph.hasTask("publishReleasePublicationToCentralStagingRepository") })
+        useGpgCmd()
+        sign(publishing.publications["release"])
     }
 }
 
