@@ -9,17 +9,21 @@ the same vocabulary.
 
 ## Installation
 
-Gradle coordinate: `dev.bgeo:background-geolocation:0.1.0` (group `dev.bgeo`,
-artifact `background-geolocation` — the Gradle module is `:sdk`, but the
-publish coordinate is set explicitly in `sdk/build.gradle.kts` rather than
-defaulting to the module name).
+```kotlin
+dependencies {
+    implementation("dev.bgeo:background-geolocation:0.1.0")
+}
+```
 
-This module isn't published anywhere yet — Maven Central packaging lands in
-phase 2. For now, the engine AAR it depends on is vendored as a local Maven
-repo under `libs/` (wired in `settings.gradle.kts` via
-`maven { url = uri("${rootDir}/libs") }`); a consuming app in this phase
-should include this `sdk` module directly (e.g. via `includeBuild`) rather
-than resolve it from a remote repository.
+Published on Maven Central, as is the closed engine it depends on
+(`dev.bgeo:bgeo-android`), so `mavenCentral()` is the only repository a
+consumer needs — the engine arrives transitively.
+
+The `libs/` directory in this repo is a local Maven repo holding the same
+engine AAR, wired in `settings.gradle.kts`. It stays: it is how the example
+app builds against an engine version that has not been published yet.
+
+Full documentation: https://bgeo.dev/docs/android/
 
 ## Integration
 
