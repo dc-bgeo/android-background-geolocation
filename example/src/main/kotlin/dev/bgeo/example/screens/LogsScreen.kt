@@ -16,7 +16,6 @@ package dev.bgeo.example.screens
 // `LogsScreenLogicTest` for the coverage. This file is rendering only.
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -30,7 +29,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -44,6 +42,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -71,12 +70,18 @@ private const val NATIVE_FETCH_LIMIT = 300
 /** `LogsScreen.tsx`'s `LEVELS` chip row: `null` stands in for `'all'` — see `mergeAndFilterLogs`. */
 private val LEVEL_OPTIONS: List<LogLevel?> = listOf(null) + LogLevel.entries
 
+/** Where the level chips wrap — see [Header] for the widths this number comes from. */
+private const val LEVELS_ON_FIRST_ROW = 4
+
 @Composable
 fun LogsScreen(appStore: AppStore) {
     val colors = Palette.getValue(if (isSystemInDarkTheme()) Scheme.DARK else Scheme.LIGHT)
     val appLogs by appStore.logs.collectAsState()
-    var level by remember { mutableStateOf<LogLevel?>(null) }
-    var follow by remember { mutableStateOf(true) }
+    // Saveable for the same reason as the Map screen's toggles: leaving the
+    // tab tears this screen down, and a filter that resets itself is worse
+    // than no filter.
+    var level by rememberSaveable { mutableStateOf<LogLevel?>(null) }
+    var follow by rememberSaveable { mutableStateOf(true) }
     var nativeLines by remember { mutableStateOf<List<LogLine>>(emptyList()) }
     val listState = rememberLazyListState()
 
@@ -154,36 +159,46 @@ private fun Header(
     onClear: () -> Unit,
     colors: ThemeColors,
 ) {
-    Row(
+    // Two rows of full-size chips — what `LogsScreen.tsx`'s `flexWrap: 'wrap'`
+    // produces at this width, and what the iOS console writes out explicitly
+    // (neither toolkit has a flow layout at these versions).
+    //
+    // Four layouts were measured on the emulator to get here. One `Row` of all
+    // eight pushed "follow"/"clear" off screen entirely; making it
+    // horizontally scrollable left the trailing level chips clipped with
+    // nothing to say they were there; six chips on their own row still
+    // overflowed (each `FilterChip` carries 32dp of padding, so they want
+    // ~444dp on a 411dp phone); and a full-width segmented row fits by
+    // construction but had to ellipsise "verbose" into "verb…". Splitting
+    // 4 + (2 + actions) keeps every label whole and fits a 360dp phone.
+    Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        // Scrollable, and weighted so it yields space rather than taking it:
-        // the seven level chips plus follow/clear do not fit one row on a
-        // phone. Found on the emulator — the unweighted row pushed "follow"
-        // and "clear" off-screen entirely (both unreachable) and squashed the
-        // last chip into a one-letter-per-line column.
-        Row(
-            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            LEVEL_OPTIONS.forEach { option ->
-                FilterChip(
-                    selected = level == option,
-                    onClick = { onLevelSelected(option) },
-                    label = { Text(option?.name?.lowercase() ?: "all") },
-                )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            LEVEL_OPTIONS.take(LEVELS_ON_FIRST_ROW).forEach { option ->
+                LevelChip(option, selected = level == option, onClick = { onLevelSelected(option) })
             }
         }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = follow, onClick = onToggleFollow, label = { Text("follow") })
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            LEVEL_OPTIONS.drop(LEVELS_ON_FIRST_ROW).forEach { option ->
+                LevelChip(option, selected = level == option, onClick = { onLevelSelected(option) })
+            }
+            FilterChip(selected = follow, onClick = onToggleFollow, label = { Text("follow", maxLines = 1, softWrap = false) })
             Button(onClick = onClear, colors = ButtonDefaults.buttonColors(containerColor = colors.surfaceRaised, contentColor = colors.text)) {
-                Text("clear")
+                Text("clear", maxLines = 1, softWrap = false)
             }
         }
     }
+}
+
+@Composable
+private fun LevelChip(option: LogLevel?, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(option?.name?.lowercase() ?: "all", maxLines = 1, softWrap = false) },
+    )
 }
 
 @Composable

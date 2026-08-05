@@ -77,6 +77,57 @@ data class RebuildDecision(
     val rebuildGeofences: Boolean,
 )
 
+/**
+ * The slice of a (possibly very long) point list the map actually draws, and
+ * where that slice sits in the whole. Port of `MapPaging`/`MapWindow` from
+ * `ios/Example/Sources/Screens/MapScreen.swift`, itself a port of the paging
+ * math inline in `MapScreen.tsx:61-72`; `flutter/example`'s `_pageSize` block
+ * is the same thing again.
+ */
+data class MapWindow(
+    val effPage: Int,
+    val pageCount: Int,
+    val windowStart: Int,
+    val windowEnd: Int,
+    val onNewestPage: Boolean,
+)
+
+object MapPaging {
+    /**
+     * RN's `PAGE_SIZE`. Markers are native overlays and get slow in the
+     * thousands, so the map only ever draws a window of at most this many
+     * points — parity with the web console and the other three consoles.
+     */
+    const val PAGE_SIZE = 1000
+
+    /**
+     * `page` 0 = the newest [pageSize] points (this is the page that follows
+     * live); higher pages step back through history. An out-of-range [page]
+     * is clamped the same way RN's `effPage = Math.min(page, pageCount - 1)`
+     * does, so a page that stops existing (the buffer shrank, or a range
+     * returned fewer points) can never leave the screen showing nothing.
+     */
+    fun window(totalCount: Int, page: Int, pageSize: Int = PAGE_SIZE): MapWindow {
+        if (pageSize <= 0) {
+            return MapWindow(effPage = 0, pageCount = 1, windowStart = 0, windowEnd = totalCount, onNewestPage = true)
+        }
+        val pageCount = maxOf(1, (totalCount + pageSize - 1) / pageSize)
+        val effPage = page.coerceIn(0, pageCount - 1)
+        val windowEnd = totalCount - effPage * pageSize
+        val windowStart = maxOf(0, windowEnd - pageSize)
+        return MapWindow(
+            effPage = effPage,
+            pageCount = pageCount,
+            windowStart = windowStart,
+            windowEnd = windowEnd,
+            onNewestPage = effPage == 0,
+        )
+    }
+}
+
+/** What [MapRebuild.diffTrackDots] says has to change on the map: nothing else may be touched. */
+data class TrackDotDiff(val added: List<String>, val removed: List<String>)
+
 object MapRebuild {
 
     /** Plain structural-equality comparison — the track and geofence halves are decided completely independently. */
@@ -130,4 +181,44 @@ object MapRebuild {
             geofenceKeys = geofences.map { fence -> geofenceKey(fence.identifier, fence.latitude, fence.longitude, fence.radius, colorHexFor(fence)) },
             geofencesVisible = showGeofences,
         )
+
+    /**
+     * One stable key per drawn track dot, in draw order.
+     *
+     * A point is keyed by `uuid`, falling back to `timestamp` when the SDK
+     * supplied none — and NEITHER is guaranteed unique across a window, so a
+     * repeat takes an occurrence suffix. Without it two points sharing a key
+     * would collapse into one map dot: a silent, permanent hole in the track
+     * rather than a visible failure.
+     */
+    fun trackDotKeys(points: List<Point>): List<String> {
+        val occurrences = HashMap<String, Int>()
+        return points.map { point ->
+            val base = point.uuid ?: point.timestamp
+            val occurrence = (occurrences[base] ?: 0) + 1
+            occurrences[base] = occurrence
+            if (occurrence == 1) base else "$base#$occurrence"
+        }
+    }
+
+    /**
+     * What has to be added to / removed from the map so the dots on screen
+     * match [desired] — everything else stays exactly as it is.
+     *
+     * This exists because of the defect this fixed on iOS first: the renderer
+     * used to remove EVERY track overlay and build a fresh one for each point
+     * on every accepted fix (~1/s while driving), which on that platform
+     * blinked the whole track and here means up to [MapPaging.PAGE_SIZE]
+     * `Marker`s and bitmaps allocated per fix. A window that slides by one
+     * point should cost one add and one remove, and that is exactly what this
+     * returns.
+     */
+    fun diffTrackDots(existing: Collection<String>, desired: List<String>): TrackDotDiff {
+        val desiredSet = desired.toSet()
+        val existingSet = existing.toSet()
+        return TrackDotDiff(
+            added = desired.filter { it !in existingSet },
+            removed = existing.filter { it !in desiredSet },
+        )
+    }
 }

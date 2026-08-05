@@ -334,6 +334,7 @@ fun ExampleApp(container: AppContainer, permissionRequester: PermissionRequester
             ExampleTab.MAP -> MapScreen(
                 appStore = container.store,
                 logUploader = container.logUploader,
+                deviceLink = container.deviceLink,
                 permissionRequester = permissionRequester,
                 onGeofenceRequest = { geofenceRequest = it },
             )

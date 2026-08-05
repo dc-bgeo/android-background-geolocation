@@ -18,15 +18,9 @@ import java.util.TimeZone
  * a plain object with no Android/Compose imports so it stays unit-testable
  * under this module's `isReturnDefaultValues` harness — see `HistoryTest`.
  *
- * **Not wired into `MapScreen.kt` by this task.** Both reference clients use
- * this data source ONLY for the Map screen's history range bar
- * (`history.ts`'s sole consumer is `MapScreen.tsx`; `LogsScreen.tsx`/
- * `.swift` never touch it), and `MapScreen.kt`'s own header already
- * documents that windowing/range UI was deliberately deferred out of Task 5.
- * This task's file list builds the data layer only (`History.kt` +
- * `HistoryTest`) — it does not touch `MapScreen.kt` or build a
- * `DateTimeField.kt` picker, since neither is on this task's file list and
- * neither has any other caller yet. See the task report for the reasoning.
+ * Consumed by `MapScreen.kt`'s range bar, and nothing else — same as both
+ * reference clients (`history.ts`'s sole consumer is `MapScreen.tsx`;
+ * `LogsScreen.tsx`/`.swift` never touch it).
  */
 object History {
 
@@ -119,6 +113,18 @@ object History {
         }
         return filterPointsByRange(localPoints, from, to)
     }
+
+    /**
+     * A picked range bound (epoch millis, from the Map screen's date/time
+     * dialogs) -> the wire format [load] sends and [parseIsoMillis] reads
+     * back. UTC, whole seconds: the same shape `Date.toISOString()` produces
+     * for RN and `Date.ISO8601Format` for iOS, which is what the server's
+     * `from`/`to` query parameters are specified against.
+     */
+    fun isoUtc(millis: Long): String =
+        SimpleDateFormat(ISO_PATTERNS[1], Locale.US)
+            .apply { timeZone = TimeZone.getTimeZone("UTC") }
+            .format(Date(millis))
 
     private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
 }

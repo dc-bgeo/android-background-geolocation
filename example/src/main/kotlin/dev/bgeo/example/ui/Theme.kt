@@ -1,5 +1,11 @@
 package dev.bgeo.example.ui
 
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 
@@ -125,6 +131,73 @@ val DarkColors = ThemeColors(
 )
 
 val Palette: Map<Scheme, ThemeColors> = mapOf(Scheme.LIGHT to LightColors, Scheme.DARK to DarkColors)
+
+/**
+ * Wraps the app in a `MaterialTheme` built from [Palette] above.
+ *
+ * Without this, every Material component (`Button`, `FilterChip`,
+ * `FloatingActionButton`, `NavigationBar`, `Switch`, `Surface`'s tonal
+ * elevation) falls back to Material3's own baseline scheme — the stock purple
+ * — while only the hand-coloured bits (the Logs viewport) used the shared
+ * palette. That is why this console did not look like its RN/iOS/Flutter
+ * siblings or the web console, all of which are the same blue `accent`.
+ */
+@Composable
+fun ExampleTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = Palette.getValue(if (dark) Scheme.DARK else Scheme.LIGHT).toColorScheme(dark),
+        content = content,
+    )
+}
+
+/**
+ * [ThemeColors] -> Material3 roles. Only the roles this app actually renders
+ * are mapped; the rest keep the baseline defaults.
+ *
+ * `surfaceTint` is deliberately set to `surface` itself: Material tints a
+ * raised `Surface` toward `surfaceTint` (default: `primary`) in proportion to
+ * its `tonalElevation`, which would put a blue wash over the map panels and
+ * the tab bar. Tinting a surface toward itself is a no-op, so elevation stays
+ * a shadow-only cue — matching the flat panels the other consoles draw.
+ */
+private fun ThemeColors.toColorScheme(dark: Boolean): ColorScheme =
+    (if (dark) darkColorScheme() else lightColorScheme()).copy(
+        primary = accent,
+        onPrimary = onAccent,
+        // NOT `accentSoft`: this is the FAB's container, and `accentSoft` is a
+        // 12%-alpha tint meant for badges — it left the map's two FABs almost
+        // invisible over the tiles. A solid panel with an accent icon is what
+        // the other consoles draw there.
+        primaryContainer = surface,
+        onPrimaryContainer = accentText,
+        inversePrimary = accentText,
+        secondary = accent,
+        onSecondary = onAccent,
+        secondaryContainer = accentSoft,
+        onSecondaryContainer = accentText,
+        tertiary = accent,
+        onTertiary = onAccent,
+        tertiaryContainer = accentSoft,
+        onTertiaryContainer = accentText,
+        background = background,
+        onBackground = text,
+        surface = surface,
+        onSurface = text,
+        surfaceVariant = surfaceRaised,
+        onSurfaceVariant = text2,
+        surfaceTint = surface,
+        surfaceContainerLowest = surface,
+        surfaceContainerLow = surface,
+        surfaceContainer = tabBar,
+        surfaceContainerHigh = surfaceRaised,
+        surfaceContainerHighest = surfaceRaised,
+        error = danger,
+        onError = onAccent,
+        errorContainer = danger.copy(alpha = 0.14f),
+        onErrorContainer = dangerText,
+        outline = border,
+        outlineVariant = separator,
+    )
 
 /** `theme.ts`'s `MONO` resolves to `'monospace'` on Android (the non-iOS branch of its `Platform.select`). */
 val Mono: FontFamily = FontFamily.Monospace

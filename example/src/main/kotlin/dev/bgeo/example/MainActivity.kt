@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import com.bgeo.sdk.PermissionRequester
+import dev.bgeo.example.ui.ExampleTheme
 
 /**
  * The console's only Activity. It owns no SDK state: `attach()` and the
@@ -20,6 +21,10 @@ class MainActivity : ComponentActivity() {
         val permissionRequester = PermissionRequester(this)
         val container = (application as ExampleApplication).container
 
-        setContent { ExampleApp(container = container, permissionRequester = permissionRequester) }
+        setContent {
+            ExampleTheme {
+                ExampleApp(container = container, permissionRequester = permissionRequester)
+            }
+        }
     }
 }

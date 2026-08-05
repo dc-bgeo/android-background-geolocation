@@ -1,6 +1,6 @@
 package dev.bgeo.example.screens
 
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,11 +13,16 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -33,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.bgeo.example.AppStore
 import dev.bgeo.example.ConfigCoerce
@@ -44,7 +50,16 @@ import dev.bgeo.example.ConfigStore
 import dev.bgeo.example.DeviceLink
 import dev.bgeo.example.LinkState
 import dev.bgeo.example.LogLevel
+import com.bgeo.sdk.BackgroundGeolocation
+import com.bgeo.sdk.State
+import com.bgeo.sdk.destroyLocations
+import com.bgeo.sdk.destroyLog
+import com.bgeo.sdk.getCount
+import com.bgeo.sdk.getLog
+import com.bgeo.sdk.sync
+import com.bgeo.sdk.uploadLog
 import dev.bgeo.example.LogUploader
+import dev.bgeo.example.ui.Mono
 import kotlinx.coroutines.launch
 
 /**
@@ -168,6 +183,212 @@ fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: Dev
         ) {
             Text("Reset config to defaults")
         }
+
+        StateSection(appStore = appStore, log = ::log)
+    }
+}
+
+/**
+ * The engine's state snapshot, the queue/log counters, and the SDK actions
+ * that have no other home — a Kotlin port of
+ * `ios/Example/Sources/Screens/SettingsScreen.swift`'s `StateSection`.
+ *
+ * `requestPermission`/`getCurrentPosition`/`start`/`stop` are deliberately NOT
+ * here: they live on the Map screen on every console, so each call has exactly
+ * one button in the app.
+ *
+ * `requestTemporaryFullAccuracy` is on the iOS screen and not here for a
+ * harder reason — reduced accuracy is a CoreLocation concept, and the Android
+ * SDK exposes no counterpart to ask about it. This is a platform difference,
+ * not a missing port.
+ */
+@Composable
+private fun StateSection(appStore: AppStore, log: (String, String, LogLevel) -> Unit) {
+    val points by appStore.points.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    var engineState by remember { mutableStateOf<State?>(null) }
+    var queueCount by remember { mutableStateOf<Int?>(null) }
+    var logCount by remember { mutableStateOf<Int?>(null) }
+    var isMovingDraft by remember { mutableStateOf(false) }
+    var results by remember { mutableStateOf<Map<String, ActionOutcome>>(emptyMap()) }
+    var busy by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    suspend fun refresh() {
+        engineState = try {
+            BackgroundGeolocation.getState()
+        } catch (e: Exception) {
+            null
+        }
+        queueCount = try {
+            BackgroundGeolocation.getCount()
+        } catch (e: Exception) {
+            null
+        }
+        logCount = try {
+            BackgroundGeolocation.getLog(LOG_COUNT_LIMIT).size
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    // Every action reports its outcome in the same three places: inline under
+    // its own button, in the Logs tab, and (on failure) as an error rather
+    // than a success message — the same rule the config fields follow above.
+    fun runAction(key: String, action: suspend () -> String) {
+        if (key in busy) return
+        busy = busy + key
+        scope.launch {
+            try {
+                val message = action()
+                results = results + (key to ActionOutcome(message, isError = false))
+                log(key, message, LogLevel.INFO)
+            } catch (e: Exception) {
+                val message = e.message ?: e.toString()
+                results = results + (key to ActionOutcome(message, isError = true))
+                log(key, message, LogLevel.ERROR)
+            }
+            busy = busy - key
+            refresh()
+        }
+    }
+
+    LaunchedEffect(Unit) { refresh() }
+
+    Column(modifier = Modifier.padding(bottom = 24.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Engine state", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = { scope.launch { refresh() } }) { Text("Refresh") }
+        }
+
+        engineState?.let { state ->
+            // Absent keys are dropped rather than shown as "—": the two lists
+            // this and the iOS screen render from are a documented SUPERSET of
+            // what either engine may populate (see the State table in the
+            // reference docs), so a missing row means "this engine doesn't
+            // report that", not "the value is unknown".
+            STATE_FIELDS.forEach { key ->
+                state[key]?.let { value -> StateRow(key, describeStateValue(value)) }
+            }
+        }
+        StateRow("upload queue", "${queueCount?.toString() ?: "—"} records")
+        StateRow("log history", if (logCount != null && logCount!! >= LOG_COUNT_LIMIT) "$LOG_COUNT_LIMIT+ rows" else "${logCount?.toString() ?: "—"} rows")
+
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Switch(checked = isMovingDraft, onCheckedChange = { isMovingDraft = it })
+            Spacer(Modifier.width(12.dp))
+            Text("Moving (for Change pace)", style = MaterialTheme.typography.bodyMedium)
+        }
+        ActionButton("Change pace", "changePace", busy, results, ::runAction) {
+            BackgroundGeolocation.changePace(isMovingDraft)
+            "isMoving=$isMovingDraft"
+        }
+
+        Row(modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.weight(1f)) {
+                ActionButton("Sync now", "sync", busy, results, ::runAction) {
+                    "${BackgroundGeolocation.sync().size} records"
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Box(modifier = Modifier.weight(1f)) {
+                ActionButton("Destroy queue", "destroyLocations", busy, results, ::runAction, danger = true) {
+                    "${BackgroundGeolocation.destroyLocations()} records"
+                }
+            }
+        }
+
+        ActionButton("Upload logs", "uploadLog", busy, results, ::runAction) {
+            "${BackgroundGeolocation.uploadLog()} rows handed to the flusher"
+        }
+        ActionButton("Destroy log", "destroyLog", busy, results, ::runAction, danger = true) {
+            "${BackgroundGeolocation.destroyLog()} rows"
+        }
+        ActionButton("Reset odometer", "resetOdometer", busy, results, ::runAction) {
+            BackgroundGeolocation.resetOdometer()
+            "odometer=0"
+        }
+
+        Row(modifier = Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("Track buffer: ${points.size} pts ·", style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { appStore.clearTrack() }) {
+                Text("clear track", color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+private data class ActionOutcome(val message: String, val isError: Boolean)
+
+/**
+ * The state keys this screen renders, in display order.
+ *
+ * A superset of what any one engine populates — absent keys are dropped, not
+ * shown as "—" (see the call site). The first block is the iOS console's list
+ * minus its two CoreLocation-only entries (`sessionEngineActive`,
+ * `serviceSessionActive`); the second is what the Android engine reports and
+ * iOS does not (`BGGeoEngine.stateMap`). Of the first block, today's Android
+ * engine populates only `enabled`/`isMoving`/`odometer`/`geofenceCount` — the
+ * rest are listed so they appear on their own if the engine ever starts
+ * reporting them.
+ */
+private val STATE_FIELDS = listOf(
+    "enabled", "trackingActive", "isMoving", "odometer", "geofenceCount",
+    "authorization", "lastRawFixAge", "lastAcceptedFixAge", "watchdogRecoveryCount",
+    "trackingMode", "connected", "lastGeofenceError",
+)
+
+/** `getLog`'s ceiling for the "log history" counter — a count past this reads as "N+". */
+private const val LOG_COUNT_LIMIT = 5000
+
+/** Renders a raw `State` value; booleans as true/false, everything else via its own `toString`. */
+private fun describeStateValue(value: Any): String = when (value) {
+    is Boolean -> if (value) "true" else "false"
+    else -> value.toString()
+}
+
+@Composable
+private fun StateRow(key: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text(key, style = MaterialTheme.typography.bodySmall, fontFamily = Mono, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodySmall, fontFamily = Mono, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun ActionButton(
+    title: String,
+    key: String,
+    busy: Set<String>,
+    results: Map<String, ActionOutcome>,
+    runAction: (String, suspend () -> String) -> Unit,
+    danger: Boolean = false,
+    action: suspend () -> String,
+) {
+    val running = key in busy
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+        Button(
+            onClick = { runAction(key, action) },
+            enabled = !running,
+            colors = if (danger) {
+                ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                )
+            } else {
+                ButtonDefaults.buttonColors()
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(if (running) "$title…" else title)
+        }
+        results[key]?.let { outcome ->
+            Text(
+                outcome.message,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (outcome.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -280,12 +501,16 @@ private fun ConfigFieldRow(
                 ConfigFieldType.STRING -> key(rejectionToken) {
                     CommitField(value = displayString(value), keyboardType = KeyboardType.Text, onCommit = { onChange(it) })
                 }
-                ConfigFieldType.ENUM -> EnumButtonsRow(
-                    options = field.options,
-                    isSelected = { optionValue -> matches(optionValue, value) },
-                    onSelect = { onChange(it) },
-                )
+                // ENUM renders BELOW this row instead — see [EnumSegmentedRow].
+                ConfigFieldType.ENUM -> Unit
             }
+        }
+        if (field.type == ConfigFieldType.ENUM) {
+            EnumSegmentedRow(
+                options = field.options,
+                isSelected = { optionValue -> matches(optionValue, value) },
+                onSelect = { onChange(it) },
+            )
         }
         error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -378,11 +603,40 @@ internal fun decideNumberCommit(text: String, isIntKind: Boolean): NumberCommitD
     }
 }
 
+/**
+ * An enum field's options, as a full-width segmented control on its own row
+ * under the label.
+ *
+ * Was a `Row` of `FilterChip`s sharing the label's row: with six options
+ * (`logLevel`) the chips got whatever width the label left over — a few dp
+ * each — so the last one wrapped a letter per line ("V/E/R/B", four lines
+ * tall) and stretched the whole row with it, which is where the stray vertical
+ * gap around that field came from. A segmented row splits the width evenly
+ * between its buttons by construction, so no option can be squeezed out no
+ * matter how many there are; `maxLines = 1` + `softWrap = false` is the
+ * belt-and-braces guard that a label can never stack vertically again.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EnumButtonsRow(options: List<ConfigFieldOption>, isSelected: (Any) -> Boolean, onSelect: (Any) -> Unit) {
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        options.forEach { option ->
-            FilterChip(selected = isSelected(option.value), onClick = { onSelect(option.value) }, label = { Text(option.label) })
+private fun EnumSegmentedRow(options: List<ConfigFieldOption>, isSelected: (Any) -> Boolean, onSelect: (Any) -> Unit) {
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        options.forEachIndexed { index, option ->
+            SegmentedButton(
+                selected = isSelected(option.value),
+                onClick = { onSelect(option.value) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                // The default selected-state checkmark eats the width six
+                // options can least afford; the fill already says which is on.
+                icon = {},
+            ) {
+                Text(
+                    option.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

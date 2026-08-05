@@ -214,3 +214,117 @@ class MapRebuildTest {
         assertTrue(snapshot.geofencesVisible)
     }
 }
+
+/**
+ * The paged window and the track-dot diff — the two pieces of pure logic the
+ * renderer was missing.
+ *
+ * `MapPaging` is a port of the same math RN/iOS/Flutter run (`PAGE_SIZE`,
+ * `effPage`, `windowStart/End`); `diffTrackDots` exists because the renderer
+ * used to remove and rebuild every dot on every accepted fix.
+ */
+class MapPagingTest {
+
+    private fun point(uuid: String? = null, ts: String = "2026-07-29T00:00:00Z") =
+        Point(uuid = uuid, latitude = 1.0, longitude = 2.0, timestamp = ts)
+
+    // ---- MapPaging.window ----
+
+    @Test
+    fun `a track shorter than one page is a single page showing everything`() {
+        val window = MapPaging.window(totalCount = 5, page = 0, pageSize = 10)
+
+        assertEquals(MapWindow(effPage = 0, pageCount = 1, windowStart = 0, windowEnd = 5, onNewestPage = true), window)
+    }
+
+    @Test
+    fun `page 0 is the NEWEST points, not the oldest`() {
+        // 2500 points / 1000 -> 3 pages. Page 0 must be the tail (the live
+        // end); an implementation that counted from the start would return
+        // 0..1000 here and the map would silently show yesterday's track.
+        val page0 = MapPaging.window(totalCount = 2500, page = 0, pageSize = 1000)
+        assertEquals(MapWindow(0, 3, 1500, 2500, true), page0)
+
+        val page1 = MapPaging.window(totalCount = 2500, page = 1, pageSize = 1000)
+        assertEquals(MapWindow(1, 3, 500, 1500, false), page1)
+
+        val page2 = MapPaging.window(totalCount = 2500, page = 2, pageSize = 1000)
+        assertEquals(MapWindow(2, 3, 0, 500, false), page2)
+    }
+
+    @Test
+    fun `a page past the oldest one clamps instead of showing nothing`() {
+        // The buffer shrank (or a range returned fewer points) while the user
+        // was on an old page: clamp, never return an empty window.
+        val window = MapPaging.window(totalCount = 1500, page = 9, pageSize = 1000)
+
+        assertEquals(1, window.effPage)
+        assertEquals(0, window.windowStart)
+        assertEquals(500, window.windowEnd)
+    }
+
+    @Test
+    fun `an empty track is still one page`() {
+        assertEquals(MapWindow(0, 1, 0, 0, true), MapPaging.window(totalCount = 0, page = 0, pageSize = 1000))
+    }
+
+    @Test
+    fun `an exact multiple of the page size does not produce a trailing empty page`() {
+        val window = MapPaging.window(totalCount = 2000, page = 0, pageSize = 1000)
+
+        assertEquals(2, window.pageCount)
+        assertEquals(1000, window.windowStart)
+        assertEquals(2000, window.windowEnd)
+    }
+
+    @Test
+    fun `a negative page clamps to the live page`() {
+        assertEquals(0, MapPaging.window(totalCount = 50, page = -3, pageSize = 10).effPage)
+    }
+
+    // ---- MapRebuild.trackDotKeys / diffTrackDots ----
+
+    @Test
+    fun `a window that slides by one point costs one add and one remove`() {
+        // This is the whole point of the diff: 1000 dots on screen, one new
+        // fix, one marker created — not 1000 destroyed and 1000 rebuilt.
+        val before = MapRebuild.trackDotKeys(listOf(point("a"), point("b"), point("c")))
+        val after = MapRebuild.trackDotKeys(listOf(point("b"), point("c"), point("d")))
+
+        val diff = MapRebuild.diffTrackDots(before, after)
+
+        assertEquals(listOf("d"), diff.added)
+        assertEquals(listOf("a"), diff.removed)
+    }
+
+    @Test
+    fun `nothing changes when the drawn points are unchanged`() {
+        val keys = MapRebuild.trackDotKeys(listOf(point("a"), point("b")))
+
+        val diff = MapRebuild.diffTrackDots(keys, keys)
+
+        assertTrue(diff.added.isEmpty())
+        assertTrue(diff.removed.isEmpty())
+    }
+
+    @Test
+    fun `points sharing a key still get one dot each`() {
+        // `uuid` is optional and the `timestamp` fallback can repeat; collapsing
+        // two points onto one key would leave a permanent hole in the track.
+        val keys = MapRebuild.trackDotKeys(listOf(point(ts = "same"), point(ts = "same"), point(ts = "same")))
+
+        assertEquals(3, keys.size)
+        assertEquals(3, keys.toSet().size)
+        assertEquals("same", keys.first())
+    }
+
+    @Test
+    fun `hiding the markers layer removes every dot`() {
+        val keys = MapRebuild.trackDotKeys(listOf(point("a"), point("b")))
+
+        val diff = MapRebuild.diffTrackDots(keys, emptyList())
+
+        assertEquals(listOf("a", "b"), diff.removed)
+        assertTrue(diff.added.isEmpty())
+    }
+}

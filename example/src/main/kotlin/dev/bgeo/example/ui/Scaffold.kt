@@ -17,6 +17,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,7 +39,8 @@ enum class ExampleTab(val labelRes: Int, val icon: ImageVector) {
  */
 @Composable
 fun ExampleScaffold(content: @Composable (ExampleTab) -> Unit) {
-    var selected by remember { mutableIntStateOf(0) }
+    var selected by rememberSaveable { mutableIntStateOf(0) }
+    val stateHolder = rememberSaveableStateHolder()
     val tabs = ExampleTab.entries
 
     Scaffold(
@@ -55,7 +58,15 @@ fun ExampleScaffold(content: @Composable (ExampleTab) -> Unit) {
         },
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            content(tabs[selected])
+            // Only the selected tab is composed, so leaving a tab tears its
+            // screen down completely. Without this holder every piece of Map
+            // state — the applied history range, Follow, the layer toggles,
+            // the drawn page — silently reset on a trip to Logs and back.
+            // `SaveableStateProvider` keeps each tab's `rememberSaveable`
+            // values keyed by tab while it is off screen.
+            stateHolder.SaveableStateProvider(selected) {
+                content(tabs[selected])
+            }
         }
     }
 }

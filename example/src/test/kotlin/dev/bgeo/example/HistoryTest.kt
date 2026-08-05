@@ -289,4 +289,27 @@ class HistoryTest {
 
         assertEquals(listOf("in"), result.map { it.uuid })
     }
+
+    // ---- isoUtc: the Map screen's picked bound -> the wire ----
+    //
+    // Both directions matter and neither is implied by the other: the string
+    // has to be what the server's `from`/`to` accept AND what
+    // `parseIsoMillis` reads back, since the local-buffer fallback path
+    // filters with the very same string this produces. The default zone is
+    // pinned to Asia/Kolkata by `@Before` above, so an un-pinned formatter
+    // here would show up as a 5.5-hour skew rather than passing by luck.
+
+    @Test
+    fun `isoUtc formats a picked instant as whole-second UTC`() {
+        val millis = Instant.parse("2026-07-30T16:42:07Z").toEpochMilli()
+
+        assertEquals("2026-07-30T16:42:07Z", History.isoUtc(millis))
+    }
+
+    @Test
+    fun `isoUtc round-trips through the parser the range filter uses`() {
+        val millis = Instant.parse("2026-01-02T03:04:05Z").toEpochMilli()
+
+        assertEquals(millis, parseIsoMillis(History.isoUtc(millis)))
+    }
 }

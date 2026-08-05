@@ -18,32 +18,41 @@ package dev.bgeo.example.screens
 // which stubs all of `android.jar` (osmdroid included).
 //
 // **Split-rebuild property, and how it's verified:** [MapOverlayController]
-// keeps track overlays and geofence overlays in two separate mutable lists
-// (`trackOverlays`/`geofenceOverlays`) and removes only the list
-// `MapRebuild.decide` says changed — never `mapView.overlays.clear()` or any
-// other sweep of the combined list. This is NOT unit-tested: it requires a
-// real `MapView`/`Overlay`, both stubbed under this module's harness (no
+// keeps the track half (`trackMarkers`/`trackPolyline`/`lastMarker`) and the
+// geofence half (`geofenceOverlays`) in separate state and touches only the
+// half `MapRebuild.decide` says changed — never `mapView.overlays.clear()` or
+// any other sweep of the combined list. This is NOT unit-tested: it requires
+// a real `MapView`/`Overlay`, both stubbed under this module's harness (no
 // Robolectric, no instrumentation harness — see the module's build.gradle
-// comment). Verified by inspection instead: every removal call below reads
-// `mapView.overlays.removeAll(trackOverlays)` or `removeAll(geofenceOverlays)`
-// — grep this file for `removeAll` and `overlays.clear` to confirm there is
-// no wholesale sweep. `MapRebuildTest` proves the DECISION is correct
-// (6 required cases + 2 more); it cannot prove the renderer obeys it, per
-// the task brief's own warning that `decide` alone is not enough.
+// comment). Verified by inspection instead: grep this file for
+// `overlays.clear` (there is none) and read the four `apply*` helpers below.
+// `MapRebuildTest` proves the DECISION and the DIFF are correct; it cannot
+// prove the renderer obeys them, per the task brief's own warning that
+// `decide` alone is not enough.
 //
-// **History/paging deferred:** RN windows the track to the newest 1000
-// points (`PAGE_SIZE`) and offers a from/to history range, both backed by
-// `history.ts`. That data source is Task 7's ("logs/history/uploader"), not
-// this task's — this screen renders the SDK's live `appStore.points`
-// directly (already capped at `AppStore.MAX_POINTS` = 2000) with no
-// windowing or from/to picker. Flagged as a real, deliberate scope cut in
-// the task report, not an oversight.
+// **The track half is diffed, not rebuilt.** It used to be: every accepted
+// fix removed every track overlay and built a fresh `Marker` — with its own
+// `DotMarker.drawable` bitmap — for every point in the window. iOS had the
+// identical defect and there it visibly blinked the whole track (MapKit
+// renders overlays asynchronously); osmdroid draws synchronously so nothing
+// blinked here, which is exactly why it survived: the cost was invisible,
+// up to `MapPaging.PAGE_SIZE` `Marker`s and bitmaps allocated per second
+// while driving. `applyTrackDots` now adds/removes only what changed and
+// shares one icon instance; `applyLastMarker` moves a single marker.
+//
+// **Range and paging.** The from/to history range ([RangeBar]) reads the
+// same hybrid source as the other consoles (`History.load` -> server history
+// when linked, the local buffer otherwise), and the DRAWN track is windowed
+// to `MapPaging.PAGE_SIZE` points behind a [Pager] — both live and range
+// tracks, exactly as RN/iOS/Flutter do. The window, not the whole list, is
+// what reaches the map; the coordinates sheet still lists everything.
 
 import android.content.Context
 import android.graphics.Color
 import android.view.MotionEvent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -51,10 +60,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocationOn
@@ -63,24 +74,37 @@ import androidx.compose.material.icons.filled.MyLocation
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Satellite
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TimeInput
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberTimePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.bgeo.sdk.BackgroundGeolocation
@@ -88,16 +112,20 @@ import com.bgeo.sdk.CurrentPositionOptions
 import com.bgeo.sdk.Geofence
 import com.bgeo.sdk.PermissionRequester
 import dev.bgeo.example.AppStore
+import dev.bgeo.example.DeviceLink
+import dev.bgeo.example.History
 import dev.bgeo.example.LogLevel
 import dev.bgeo.example.LogUploader
 import dev.bgeo.example.Point
 import dev.bgeo.example.components.CoordinatesSheet
 import dev.bgeo.example.components.DotMarker
 import dev.bgeo.example.components.sheetPeekHeight
+import dev.bgeo.example.ui.Mono
 import kotlinx.coroutines.launch
 import org.osmdroid.config.Configuration
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
@@ -106,7 +134,11 @@ import org.osmdroid.views.overlay.Overlay
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Polyline
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 /**
  * Task 6 seam: what the geofence form needs to open — a long-press (new
@@ -130,6 +162,7 @@ private const val DEFAULT_LNG = 13.405
 fun MapScreen(
     appStore: AppStore,
     logUploader: LogUploader,
+    deviceLink: DeviceLink,
     permissionRequester: PermissionRequester,
     onGeofenceRequest: (GeofenceRequest) -> Unit = {},
 ) {
@@ -138,12 +171,41 @@ fun MapScreen(
     val status by appStore.status.collectAsState()
     val link by appStore.link.collectAsState()
 
-    var follow by remember { mutableStateOf(true) }
-    var satellite by remember { mutableStateOf(false) }
-    var showMarkers by remember { mutableStateOf(true) }
-    var showPolylines by remember { mutableStateOf(true) }
-    var showGeofences by remember { mutableStateOf(true) }
-    var panelOpen by remember { mutableStateOf(true) }
+    // `rememberSaveable`, not `remember`: `ExampleScaffold` composes only the
+    // selected tab, so a trip to Logs and back tears this screen down — every
+    // one of these toggles used to silently snap back to its default.
+    var follow by rememberSaveable { mutableStateOf(true) }
+    var satellite by rememberSaveable { mutableStateOf(false) }
+    var showMarkers by rememberSaveable { mutableStateOf(true) }
+    var showPolylines by rememberSaveable { mutableStateOf(true) }
+    var showGeofences by rememberSaveable { mutableStateOf(true) }
+    var panelOpen by rememberSaveable { mutableStateOf(true) }
+
+    // From/to history range (`History.load`'s only consumer, same as
+    // `MapScreen.tsx`/`.swift`): while `historyPoints` is non-null the screen
+    // draws that range instead of the live buffer, and Follow stays off.
+    var fromMillis by rememberSaveable { mutableStateOf<Long?>(null) }
+    var toMillis by rememberSaveable { mutableStateOf<Long?>(null) }
+    // The loaded range itself stays in `remember` on purpose: it is up to
+    // 2000 points, and `rememberSaveable` values also travel through the
+    // saved-instance-state Bundle, whose ~1 MB transaction limit this would
+    // flirt with. The from/to bounds survive instead, so re-applying is one
+    // tap — the data is never the thing worth risking a
+    // TransactionTooLargeException for.
+    var historyPoints by remember { mutableStateOf<List<Point>?>(null) }
+    var loadingRange by remember { mutableStateOf(false) }
+    val rangeActive = historyPoints != null
+    val displayPoints = historyPoints ?: points
+
+    // Paged window over the track (`MapPaging`): page 0 is the newest
+    // PAGE_SIZE points and follows live, higher pages step back through
+    // history. Only the window is drawn — every console does this, because
+    // native map markers get slow in the thousands.
+    var page by rememberSaveable { mutableIntStateOf(0) }
+    val window = MapPaging.window(displayPoints.size, page)
+    val windowPoints = remember(displayPoints, window) {
+        if (window.windowStart < window.windowEnd) displayPoints.subList(window.windowStart, window.windowEnd) else emptyList()
+    }
 
     val scope = rememberCoroutineScope()
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
@@ -197,14 +259,63 @@ fun MapScreen(
         }
     }
 
-    val last = points.lastOrNull()
+    /**
+     * `MapScreen.tsx`'s `applyRange`: load the range (server history when
+     * linked, the local buffer otherwise — [History.load] decides), stop
+     * following live, and frame what was loaded. A range that comes back
+     * empty still takes effect, exactly like the reference clients: the map
+     * goes blank, which IS the answer for "no points in that window", rather
+     * than silently leaving the live track on screen.
+     */
+    fun applyRange() {
+        if (fromMillis == null && toMillis == null) return
+        loadingRange = true
+        follow = false
+        scope.launch {
+            val loaded = History.load(
+                deviceLink = deviceLink,
+                linked = link.linked,
+                localPoints = points,
+                from = fromMillis?.let(History::isoUtc),
+                to = toMillis?.let(History::isoUtc),
+            )
+            historyPoints = loaded
+            loadingRange = false
+            page = 0
+            log("history", "range loaded: ${loaded.size} points", LogLevel.INFO)
+            // Frame the newest window of the range — that is what the map will
+            // draw, not the whole range.
+            fitCamera(mapViewRef, loaded.takeLast(MapPaging.PAGE_SIZE))
+        }
+    }
+
+    fun resetRange() {
+        historyPoints = null
+        fromMillis = null
+        toMillis = null
+        page = 0
+    }
+
+    val last = displayPoints.lastOrNull()
+
+    // Fit the camera to the window whenever the user pages through history —
+    // `MapScreen.tsx`'s `fittedPage` effect.
+    var fittedPage by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(window.effPage, windowPoints.size) {
+        if (fittedPage != window.effPage) {
+            fittedPage = window.effPage
+            if (windowPoints.size > 1) fitCamera(mapViewRef, windowPoints)
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         MapViewContainer(
-            points = points,
+            points = windowPoints,
             geofences = geofences,
             isMoving = status.isMoving,
-            follow = follow,
+            // Following live only makes sense on the page that HAS the live
+            // tail; browsing history must not be yanked back by the next fix.
+            follow = follow && !rangeActive && window.onNewestPage,
             satellite = satellite,
             showMarkers = showMarkers,
             showPolylines = showPolylines,
@@ -216,12 +327,15 @@ fun MapScreen(
         )
 
         Column(
+            // NO `statusBarsPadding()`: `ExampleScaffold`'s `Scaffold` already
+            // insets its content by the status bar, so adding it here again
+            // pushed these two cards a second bar-height (144px on a Pixel 7
+            // Pro, cutout included) down the screen for no reason.
             modifier = Modifier
                 .fillMaxWidth()
-                .statusBarsPadding()
                 .padding(10.dp),
         ) {
-            StatusRow(linked = link.linked, deviceId = link.deviceId, isMoving = status.isMoving, batteryLevel = status.batteryLevel, pointCount = points.size)
+            StatusRow(linked = link.linked, deviceId = link.deviceId, isMoving = status.isMoving, batteryLevel = status.batteryLevel, pointCount = displayPoints.size, rangeActive = rangeActive)
             Spacer(Modifier.height(8.dp))
             ControlCard(
                 enabled = status.enabled,
@@ -237,6 +351,14 @@ fun MapScreen(
                 onTogglePolylines = { showPolylines = !showPolylines },
                 showGeofences = showGeofences,
                 onToggleGeofences = { showGeofences = !showGeofences },
+                fromMillis = fromMillis,
+                onPickFrom = { fromMillis = it },
+                toMillis = toMillis,
+                onPickTo = { toMillis = it },
+                loadingRange = loadingRange,
+                rangeActive = rangeActive,
+                onApplyRange = ::applyRange,
+                onResetRange = ::resetRange,
             )
         }
 
@@ -261,8 +383,57 @@ fun MapScreen(
             }
         }
 
+        if (window.pageCount > 1) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(bottom = sheetPeekHeight + 16.dp, start = 14.dp),
+            ) {
+                Pager(
+                    window = window,
+                    totalCount = displayPoints.size,
+                    rangeActive = rangeActive,
+                    onOlder = { page = window.effPage + 1 },
+                    onNewer = { page = maxOf(0, window.effPage - 1) },
+                )
+            }
+        }
+
         Box(modifier = Modifier.align(Alignment.BottomCenter)) {
-            CoordinatesSheet(points = points)
+            CoordinatesSheet(points = displayPoints)
+        }
+    }
+}
+
+/**
+ * Steps through the drawn window when the track is longer than
+ * [MapPaging.PAGE_SIZE] — `‹` goes back in time, `›` returns toward live.
+ * Same control, same label shape, as the other three consoles; it only
+ * appears when there is more than one page, so a short track never sees it.
+ */
+@Composable
+private fun Pager(
+    window: MapWindow,
+    totalCount: Int,
+    rangeActive: Boolean,
+    onOlder: () -> Unit,
+    onNewer: () -> Unit,
+) {
+    Surface(shape = RoundedCornerShape(12.dp), tonalElevation = 2.dp) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 4.dp)) {
+            IconButton(onClick = onOlder, enabled = window.effPage < window.pageCount - 1, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "older points")
+            }
+            Text(
+                "${window.windowStart + 1}–${window.windowEnd} / $totalCount" +
+                    if (window.onNewestPage && !rangeActive) " · live" else "",
+                style = MaterialTheme.typography.labelSmall,
+                fontFamily = Mono,
+                maxLines = 1,
+            )
+            IconButton(onClick = onNewer, enabled = !window.onNewestPage, modifier = Modifier.size(36.dp)) {
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "newer points")
+            }
         }
     }
 }
@@ -274,6 +445,7 @@ private fun StatusRow(
     isMoving: Boolean,
     batteryLevel: Double?,
     pointCount: Int,
+    rangeActive: Boolean,
 ) {
     Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 2.dp) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -284,14 +456,17 @@ private fun StatusRow(
             }
             Spacer(Modifier.weight(1f))
             Text(if (isMoving) "● moving" else "● stationary", style = MaterialTheme.typography.labelMedium)
-            batteryLevel?.let { level ->
+            // `>= 0`, not just non-null: an unknown battery level arrives as
+            // -1 from the engine and would render as "-100%" (the same guard
+            // the iOS console needed).
+            batteryLevel?.takeIf { it >= 0 }?.let { level ->
                 dev.bgeo.example.ConfigCoerce.int(level * 100)?.let { pct ->
                     Spacer(Modifier.width(6.dp))
                     Text("$pct%", style = MaterialTheme.typography.labelMedium)
                 }
             }
             Spacer(Modifier.width(6.dp))
-            Text("$pointCount pts", style = MaterialTheme.typography.labelMedium)
+            Text("$pointCount pts${if (rangeActive) " (hist)" else ""}", style = MaterialTheme.typography.labelMedium)
         }
     }
 }
@@ -311,6 +486,14 @@ private fun ControlCard(
     onTogglePolylines: () -> Unit,
     showGeofences: Boolean,
     onToggleGeofences: () -> Unit,
+    fromMillis: Long?,
+    onPickFrom: (Long?) -> Unit,
+    toMillis: Long?,
+    onPickTo: (Long?) -> Unit,
+    loadingRange: Boolean,
+    rangeActive: Boolean,
+    onApplyRange: () -> Unit,
+    onResetRange: () -> Unit,
 ) {
     Surface(shape = RoundedCornerShape(18.dp), tonalElevation = 2.dp) {
         Column(modifier = Modifier.padding(10.dp)) {
@@ -342,9 +525,217 @@ private fun ControlCard(
                     Spacer(Modifier.width(4.dp))
                     FilterChip(selected = showGeofences, onClick = onToggleGeofences, label = { Text("Geo") })
                 }
+                Spacer(Modifier.height(8.dp))
+                RangeBar(
+                    fromMillis = fromMillis,
+                    onPickFrom = onPickFrom,
+                    toMillis = toMillis,
+                    onPickTo = onPickTo,
+                    loading = loadingRange,
+                    rangeActive = rangeActive,
+                    onApply = onApplyRange,
+                    onReset = onResetRange,
+                )
             }
         }
     }
+}
+
+/**
+ * The from/to history range bar — the last piece of `MapScreen.tsx`'s control
+ * panel this console was missing (`History.load` shipped with no caller; see
+ * that file's header, which this change makes obsolete).
+ *
+ * Two rows, not one: a picked date reads as "07-30 18:42", and two of those
+ * plus Apply plus Live do not fit a phone width side by side — the row that
+ * squeezed six chips into nothing on the Settings screen is the same failure
+ * mode.
+ */
+@Composable
+private fun RangeBar(
+    fromMillis: Long?,
+    onPickFrom: (Long?) -> Unit,
+    toMillis: Long?,
+    onPickTo: (Long?) -> Unit,
+    loading: Boolean,
+    rangeActive: Boolean,
+    onApply: () -> Unit,
+    onReset: () -> Unit,
+) {
+    var picking by remember { mutableStateOf<RangeBound?>(null) }
+
+    picking?.let { bound ->
+        val current = if (bound == RangeBound.FROM) fromMillis else toMillis
+        DateTimePickerDialog(
+            initial = current,
+            onDismiss = { picking = null },
+            onPicked = { millis ->
+                if (bound == RangeBound.FROM) onPickFrom(millis) else onPickTo(millis)
+                picking = null
+            },
+        )
+    }
+
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            RangeField(
+                label = "From",
+                millis = fromMillis,
+                placeholder = "—",
+                modifier = Modifier.weight(1f),
+                onPick = { picking = RangeBound.FROM },
+                onClear = { onPickFrom(null) },
+            )
+            Spacer(Modifier.width(8.dp))
+            RangeField(
+                label = "To",
+                millis = toMillis,
+                placeholder = "now",
+                modifier = Modifier.weight(1f),
+                onPick = { picking = RangeBound.TO },
+                onClear = { onPickTo(null) },
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Button(
+                onClick = onApply,
+                enabled = !loading && (fromMillis != null || toMillis != null),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+            ) {
+                Text("Apply")
+            }
+            if (loading) {
+                Spacer(Modifier.width(8.dp))
+                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+            }
+            if (rangeActive) {
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(onClick = onReset, contentPadding = PaddingValues(horizontal = 16.dp)) {
+                    Text("Live")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RangeField(
+    label: String,
+    millis: Long?,
+    placeholder: String,
+    modifier: Modifier,
+    onPick: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(
+            onClick = onPick,
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 10.dp),
+        ) {
+            Text(
+                "$label ${millis?.let(::formatRangeStamp) ?: placeholder}",
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (millis != null) {
+            IconButton(onClick = onClear, modifier = Modifier.size(32.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "clear $label", modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+private enum class RangeBound { FROM, TO }
+
+/**
+ * Date, then time — the same two-step flow Flutter's console uses
+ * (`showDatePicker` then `showTimePicker`).
+ *
+ * Compose's own pickers rather than `android.app.DatePickerDialog`: the
+ * platform dialog is styled by the Activity's XML theme
+ * (`android:Theme.Material.Light`), which knows nothing about this app's
+ * palette and drew a teal 2014-era dialog over an otherwise blue Material 3
+ * console. These follow [dev.bgeo.example.ui.ExampleTheme] like everything
+ * else.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DateTimePickerDialog(initial: Long?, onDismiss: () -> Unit, onPicked: (Long) -> Unit) {
+    val start = remember(initial) { Calendar.getInstance().apply { initial?.let { timeInMillis = it } } }
+    var pickingTime by remember { mutableStateOf(false) }
+    val dateState = rememberDatePickerState(initialSelectedDateMillis = start.timeInMillis)
+    val timeState = rememberTimePickerState(
+        initialHour = start.get(Calendar.HOUR_OF_DAY),
+        initialMinute = start.get(Calendar.MINUTE),
+        is24Hour = true,
+    )
+
+    if (!pickingTime) {
+        DatePickerDialog(
+            onDismissRequest = onDismiss,
+            confirmButton = { TextButton(onClick = { pickingTime = true }) { Text("Next") } },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        ) {
+            DatePicker(state = dateState)
+        }
+    } else {
+        AlertDialog(
+            onDismissRequest = onDismiss,
+            confirmButton = {
+                TextButton(onClick = { onPicked(combine(dateState.selectedDateMillis, timeState.hour, timeState.minute, start)) }) {
+                    Text("OK")
+                }
+            },
+            dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+            text = { TimeInput(state = timeState) },
+        )
+    }
+}
+
+/**
+ * The picked calendar day + the picked wall-clock time, as local-time epoch
+ * millis.
+ *
+ * `DatePickerState.selectedDateMillis` is UTC midnight of the chosen day, NOT
+ * a local timestamp — reading its fields with a default-zone `Calendar` lands
+ * on the previous or next day for anyone far enough east or west, which is the
+ * whole reason this is a named function with this comment rather than four
+ * inline `Calendar` calls.
+ */
+private fun combine(selectedDateMillis: Long?, hour: Int, minute: Int, fallback: Calendar): Long {
+    val day = Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
+        timeInMillis = selectedDateMillis ?: return fallback.timeInMillis
+    }
+    return Calendar.getInstance().apply {
+        set(day.get(Calendar.YEAR), day.get(Calendar.MONTH), day.get(Calendar.DAY_OF_MONTH), hour, minute, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+}
+
+/** Local wall-clock `MM-dd HH:mm` for a picked bound — short enough to fit the field. */
+private fun formatRangeStamp(millis: Long): String =
+    SimpleDateFormat("MM-dd HH:mm", Locale.US).format(Date(millis))
+
+/**
+ * Frames [points] after a range load, so applying a range that is nowhere near
+ * the current camera actually shows something (`MapScreen.tsx` calls
+ * `fitToCoordinates` at the same spot). A single point — or several at the
+ * same coordinate, which `BoundingBox` reports as zero-span and osmdroid
+ * cannot compute a zoom for — is centred instead.
+ */
+private fun fitCamera(mapView: MapView?, points: List<Point>) {
+    val map = mapView ?: return
+    val geoPoints = points.map { GeoPoint(it.latitude, it.longitude) }
+    val first = geoPoints.firstOrNull() ?: return
+    val box = BoundingBox.fromGeoPoints(geoPoints)
+    if (geoPoints.size < 2 || box.latitudeSpan <= 0.0 || box.longitudeSpanWithDateLine <= 0.0) {
+        map.controller.animateTo(first)
+        return
+    }
+    map.zoomToBoundingBox(box, true, 80)
 }
 
 @Composable
@@ -474,7 +865,14 @@ private class MapOverlayController {
 
     private var lastTrackSnapshot: TrackSnapshot? = null
     private var lastGeofenceSnapshot: GeofenceSnapshot? = null
-    private val trackOverlays = mutableListOf<Overlay>()
+    // The track half is keyed, not a flat list, so it can be DIFFED — see
+    // `MapRebuild.diffTrackDots`. The polyline and the current-position marker
+    // are single long-lived objects that get updated in place.
+    private val trackMarkers = LinkedHashMap<String, Marker>()
+    private var trackPolyline: Polyline? = null
+    private var lastMarker: Marker? = null
+    private var lastMarkerMoving: Boolean? = null
+    private var trackDotIcon: android.graphics.drawable.Drawable? = null
     private val geofenceOverlays = mutableListOf<Overlay>()
     private var lastTileSatellite: Boolean? = null
     private var lastFollowTarget: GeoPoint? = null
@@ -556,55 +954,115 @@ private class MapOverlayController {
 
         if (decision.rebuildTrack) {
             lastTrackSnapshot = trackSnapshot
-            if (trackOverlays.isNotEmpty()) {
-                mapView.overlays.removeAll(trackOverlays)
-                trackOverlays.clear()
-            }
-            if (showPolylines && points.size > 1) {
-                trackOverlays += Polyline().apply {
-                    setPoints(points.map { GeoPoint(it.latitude, it.longitude) })
-                    outlinePaint.color = TRACK_COLOR
-                    outlinePaint.strokeWidth = 6f
-                    setInfoWindow(null)
-                }
-            }
-            if (showMarkers) {
-                points.forEach { p ->
-                    trackOverlays += Marker(mapView).apply {
-                        position = GeoPoint(p.latitude, p.longitude)
-                        icon = DotMarker.drawable(context, diameterDp = 8f, fillColor = withAlpha(TRACK_COLOR, 0xCC), borderColor = Color.WHITE, borderWidthDp = 1f)
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        setInfoWindow(null)
-                        // Fix round 1 (F3): a track dot has no click listener
-                        // of its own, so osmdroid runs `onMarkerClickDefault`
-                        // — show info window (a no-op here), pan the camera,
-                        // and consume the tap (return true) — on whichever
-                        // marker is hit first. The track rebuilds on ~every
-                        // fix and is re-added to the end of `mapView.overlays`
-                        // each time, so it's always hit-tested before an
-                        // older geofence pin underneath it, making that pin
-                        // untappable. Returning false here means "not
-                        // handled", so osmdroid's `OverlayManager` keeps
-                        // walking down to the next overlay instead of
-                        // stopping on this dot.
-                        setOnMarkerClickListener { _, _ -> false }
-                    }
-                }
-            }
-            points.lastOrNull()?.let { lastPoint ->
-                trackOverlays += Marker(mapView).apply {
-                    position = GeoPoint(lastPoint.latitude, lastPoint.longitude)
-                    val fill = if (isMoving) ENTER_COLOR else TRACK_COLOR
-                    icon = DotMarker.drawable(context, diameterDp = 16f, fillColor = fill, borderColor = Color.WHITE, borderWidthDp = 2f)
-                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                    setInfoWindow(null)
-                    setOnMarkerClickListener { _, _ -> false } // see the comment above
-                }
-            }
-            mapView.overlays.addAll(trackOverlays)
+            applyPolyline(mapView, points, showPolylines)
+            applyTrackDots(mapView, context, points, showMarkers)
+            applyLastMarker(mapView, context, points.lastOrNull(), isMoving)
         }
 
         mapView.invalidate()
+    }
+
+    /** One long-lived [Polyline] whose points are replaced in place — nothing is torn off the map to redraw the track. */
+    private fun applyPolyline(mapView: MapView, points: List<Point>, showPolylines: Boolean) {
+        if (!showPolylines || points.size <= 1) {
+            trackPolyline?.let { mapView.overlays.remove(it) }
+            trackPolyline = null
+            return
+        }
+        val polyline = trackPolyline ?: Polyline().also { fresh ->
+            fresh.outlinePaint.color = TRACK_COLOR
+            fresh.outlinePaint.strokeWidth = 6f
+            fresh.setInfoWindow(null)
+            trackPolyline = fresh
+            mapView.overlays.add(fresh)
+        }
+        polyline.setPoints(points.map { GeoPoint(it.latitude, it.longitude) })
+    }
+
+    /**
+     * Adds and removes ONLY the dots that actually changed
+     * ([MapRebuild.diffTrackDots]), and gives every one of them the SAME icon
+     * instance.
+     *
+     * Both halves matter. The old code removed every dot and built a fresh
+     * `Marker` per point on each accepted fix, each with its own
+     * `DotMarker.drawable` — a `Bitmap` allocation per point per fix, up to
+     * [MapPaging.PAGE_SIZE] of them a second while driving. A window that
+     * slides by one point now costs one `Marker` and zero bitmaps.
+     */
+    private fun applyTrackDots(mapView: MapView, context: Context, points: List<Point>, showMarkers: Boolean) {
+        val desired = if (showMarkers) MapRebuild.trackDotKeys(points) else emptyList()
+        val diff = MapRebuild.diffTrackDots(trackMarkers.keys.toList(), desired)
+        if (diff.added.isEmpty() && diff.removed.isEmpty()) return
+
+        diff.removed.forEach { key ->
+            trackMarkers.remove(key)?.let { mapView.overlays.remove(it) }
+        }
+        if (diff.added.isNotEmpty()) {
+            // Shared across every dot added in this pass: identical size and
+            // colour, and osmdroid re-sets the icon's bounds per draw, so one
+            // bitmap serves the whole track.
+            val icon = trackDotIcon ?: DotMarker.drawable(
+                context,
+                diameterDp = 8f,
+                fillColor = withAlpha(TRACK_COLOR, 0xCC),
+                borderColor = Color.WHITE,
+                borderWidthDp = 1f,
+            ).also { trackDotIcon = it }
+            val pointByKey = desired.zip(points).toMap()
+            diff.added.forEach { key ->
+                val point = pointByKey[key] ?: return@forEach
+                val marker = Marker(mapView).apply {
+                    position = GeoPoint(point.latitude, point.longitude)
+                    this.icon = icon
+                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                    setInfoWindow(null)
+                    // Fix round 1 (F3): a track dot has no click listener of
+                    // its own, so osmdroid runs `onMarkerClickDefault` — show
+                    // info window (a no-op here), pan the camera, and consume
+                    // the tap (return true) — on whichever marker is hit
+                    // first, which would make a geofence pin underneath a dot
+                    // untappable. Returning false means "not handled", so
+                    // osmdroid's `OverlayManager` keeps walking down to the
+                    // next overlay instead of stopping on this dot.
+                    setOnMarkerClickListener { _, _ -> false }
+                }
+                trackMarkers[key] = marker
+                mapView.overlays.add(marker)
+            }
+        }
+    }
+
+    /**
+     * ONE current-position marker for the life of the map: it is moved, not
+     * replaced, and its icon is rebuilt only when the moving/stationary colour
+     * actually changes.
+     */
+    private fun applyLastMarker(mapView: MapView, context: Context, lastPoint: Point?, isMoving: Boolean) {
+        if (lastPoint == null) {
+            lastMarker?.let { mapView.overlays.remove(it) }
+            lastMarker = null
+            lastMarkerMoving = null
+            return
+        }
+        val marker = lastMarker ?: Marker(mapView).apply {
+            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+            setInfoWindow(null)
+            setOnMarkerClickListener { _, _ -> false } // see applyTrackDots
+            lastMarker = this
+            mapView.overlays.add(this)
+        }
+        marker.position = GeoPoint(lastPoint.latitude, lastPoint.longitude)
+        if (lastMarkerMoving != isMoving) {
+            lastMarkerMoving = isMoving
+            marker.icon = DotMarker.drawable(
+                context,
+                diameterDp = 16f,
+                fillColor = if (isMoving) ENTER_COLOR else TRACK_COLOR,
+                borderColor = Color.WHITE,
+                borderWidthDp = 2f,
+            )
+        }
     }
 
     /** Circle + pin for one geofence. First tap shows the "tap again to edit" callout; a second tap on an already-shown callout invokes [onGeofenceTap]. */

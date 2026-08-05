@@ -3,7 +3,7 @@
   "component": {
     "group": "dev.bgeo",
     "module": "bgeo-android",
-    "version": "0.13.2",
+    "version": "0.13.3",
     "attributes": {
       "org.gradle.status": "release"
     }
@@ -47,13 +47,13 @@
       ],
       "files": [
         {
-          "name": "bgeo-android-0.13.2.aar",
-          "url": "bgeo-android-0.13.2.aar",
-          "size": 319692,
-          "sha512": "9fc84396f256224effd3c54812312aa3448d57e350be38f7f675787c6832feba0703193035c0c6b6a440e893856eb3fdbf62507b30414fee60e55070555d855d",
-          "sha256": "17c88f88f6d045f9631c3700c885f33eef0de8c1e26d468dc05fdd3e2c44371e",
-          "sha1": "dc7965308642cbf09050f896d12a9536e2f849e9",
-          "md5": "ea89784c132761efdb31cdbd110c0bda"
+          "name": "bgeo-android-0.13.3.aar",
+          "url": "bgeo-android-0.13.3.aar",
+          "size": 319990,
+          "sha512": "08b8a2499f3a3e2d65fb6517c256931bf67eb91e8d2654be122f161c3b81f7ccb46cd3d87854f9f2701b4d9ab60282e65a98cfacefd3199ec57aa3448f546c51",
+          "sha256": "35f9b74683c0985771d155cd09b5a96b22814179978462a7c965927af91d88cf",
+          "sha1": "e5720a29e701211f1edd92669109eb5b3c0f2d7e",
+          "md5": "eb94ffa32bf09d4673de86a6867b33a0"
         }
       ]
     },
@@ -97,13 +97,13 @@
       ],
       "files": [
         {
-          "name": "bgeo-android-0.13.2.aar",
-          "url": "bgeo-android-0.13.2.aar",
-          "size": 319692,
-          "sha512": "9fc84396f256224effd3c54812312aa3448d57e350be38f7f675787c6832feba0703193035c0c6b6a440e893856eb3fdbf62507b30414fee60e55070555d855d",
-          "sha256": "17c88f88f6d045f9631c3700c885f33eef0de8c1e26d468dc05fdd3e2c44371e",
-          "sha1": "dc7965308642cbf09050f896d12a9536e2f849e9",
-          "md5": "ea89784c132761efdb31cdbd110c0bda"
+          "name": "bgeo-android-0.13.3.aar",
+          "url": "bgeo-android-0.13.3.aar",
+          "size": 319990,
+          "sha512": "08b8a2499f3a3e2d65fb6517c256931bf67eb91e8d2654be122f161c3b81f7ccb46cd3d87854f9f2701b4d9ab60282e65a98cfacefd3199ec57aa3448f546c51",
+          "sha256": "35f9b74683c0985771d155cd09b5a96b22814179978462a7c965927af91d88cf",
+          "sha1": "e5720a29e701211f1edd92669109eb5b3c0f2d7e",
+          "md5": "eb94ffa32bf09d4673de86a6867b33a0"
         }
       ]
     }
