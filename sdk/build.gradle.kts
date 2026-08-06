@@ -128,7 +128,17 @@ afterEvaluate {
         // Only arms for the Central staging publication — a local build on a
         // machine with no signing key must keep working.
         setRequired({ gradle.taskGraph.hasTask("publishReleasePublicationToCentralStagingRepository") })
-        useGpgCmd()
+
+        // CI has no gpg-agent to unlock, so it passes the key itself; a
+        // developer machine keeps using the agent (see RELEASING.local.md,
+        // and pinentry-mac if the passphrase prompt has nowhere to appear).
+        val inMemoryKey = System.getenv("SIGNING_KEY")
+        val inMemoryPassword = System.getenv("SIGNING_PASSWORD")
+        if (!inMemoryKey.isNullOrBlank() && !inMemoryPassword.isNullOrBlank()) {
+            useInMemoryPgpKeys(inMemoryKey, inMemoryPassword)
+        } else {
+            useGpgCmd()
+        }
         sign(publishing.publications["release"])
     }
 }
