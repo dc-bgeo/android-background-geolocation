@@ -1,5 +1,7 @@
 # BGeo Android SDK
 
+[![maven central](https://img.shields.io/maven-central/v/dev.bgeo/background-geolocation?label=maven%20central&color=blue)](https://central.sonatype.com/artifact/dev.bgeo/background-geolocation)
+
 An open Kotlin facade over the closed-source BGeo background-geolocation
 engine. This module (`com.bgeo.sdk`) is the public API a native Android app
 integrates against; it talks to the closed `dev.bgeo:bgeo-android` engine AAR
