@@ -9,8 +9,29 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.bgeo</groupId>
   <artifactId>bgeo-android</artifactId>
-  <version>0.13.3</version>
+  <version>0.13.4</version>
   <packaging>aar</packaging>
+  <name>BGeo Android engine</name>
+  <description>Closed-source background geolocation engine for Android: motion-state machine, adaptive power policy, Kalman/accuracy filtering, SQLite queue with HTTP upload, and geofencing. Consumed through dev.bgeo:background-geolocation.</description>
+  <url>https://bgeo.dev</url>
+  <licenses>
+    <license>
+      <name>BGeo SDK License, Part B (proprietary)</name>
+      <url>https://github.com/dc-bgeo/android-background-geolocation/blob/main/LICENSE.md</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+  <developers>
+    <developer>
+      <name>BGeo</name>
+      <url>https://bgeo.dev</url>
+    </developer>
+  </developers>
+  <scm>
+    <connection>scm:git:https://github.com/dc-bgeo/android-background-geolocation.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/dc-bgeo/android-background-geolocation.git</developerConnection>
+    <url>https://github.com/dc-bgeo/android-background-geolocation</url>
+  </scm>
   <dependencies>
     <dependency>
       <groupId>com.google.android.gms</groupId>
