@@ -137,3 +137,12 @@ To run a single test class or method, use the variant task directly —
 ```
 ./gradlew :sdk:testDebugUnitTest --tests '*ConfigTest*'
 ```
+
+## License
+
+The Kotlin facade (`sdk/src/`, `example/`) is **MIT** — see
+[`LICENSE`](./LICENSE).
+
+The `dev.bgeo:bgeo-android` engine AAR this facade depends on is
+**proprietary** and requires a license key in release builds — see
+[`LICENSE-BINARY.md`](./LICENSE-BINARY.md).

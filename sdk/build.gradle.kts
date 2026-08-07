@@ -82,19 +82,13 @@ afterEvaluate {
                             "the same API surface as the BGeo React Native and Flutter SDKs.",
                     )
                     url.set(PROJECT_URL)
-                    // Two licences, deliberately both: this facade's own source
-                    // is MIT, but it cannot run without the proprietary engine
-                    // AAR it pulls in transitively. A consumer reading only the
-                    // POM has to see both halves.
+                    // The facade's own source is MIT (see LICENSE); the proprietary terms for
+                    // the engine AAR it pulls in transitively live in LICENSE-BINARY.md and in
+                    // the engine artifact's own POM.
                     licenses {
                         license {
-                            name.set("MIT License (Part A — this facade)")
-                            url.set("$PROJECT_URL/blob/main/LICENSE.md")
-                            distribution.set("repo")
-                        }
-                        license {
-                            name.set("BGeo SDK License, Part B (proprietary — the engine binary)")
-                            url.set("$PROJECT_URL/blob/main/LICENSE.md")
+                            name.set("MIT License")
+                            url.set("$PROJECT_URL/blob/main/LICENSE")
                             distribution.set("repo")
                         }
                     }
