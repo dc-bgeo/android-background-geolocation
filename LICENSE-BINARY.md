@@ -51,4 +51,4 @@ unaffected.
 
 ---
 
-For commercial licensing and support: https://bgeo.dev
+For commercial licensing and support: https://bgeo.dev/?utm_source=github&utm_medium=license&utm_campaign=android

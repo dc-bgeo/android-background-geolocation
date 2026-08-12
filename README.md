@@ -25,7 +25,7 @@ The `libs/` directory in this repo is a local Maven repo holding the same
 engine AAR, wired in `settings.gradle.kts`. It stays: it is how the example
 app builds against an engine version that has not been published yet.
 
-Full documentation: https://bgeo.dev/docs/android/
+Full documentation: https://bgeo.dev/docs/android/?utm_source=github&utm_medium=readme&utm_campaign=android
 
 ## Integration
 
