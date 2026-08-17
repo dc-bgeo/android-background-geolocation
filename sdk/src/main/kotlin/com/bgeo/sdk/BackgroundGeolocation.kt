@@ -217,7 +217,7 @@ object BackgroundGeolocation {
      * Crash detection. Only armed while moving, and off by default
      * (`crashDetection.enabled`) - see [Config.crashDetection].
      */
-    fun crashEvents(): Flow<CrashEvent> = hub.flow("crash").mapNotNull(CrashEvent::from)
+    val crashEvents: Flow<CrashEvent> get() = hub.flow("crash").mapNotNull(CrashEvent::from)
 
     /**
      * Every `locationerror` the engine emits — a failing [watchPosition] tick,
