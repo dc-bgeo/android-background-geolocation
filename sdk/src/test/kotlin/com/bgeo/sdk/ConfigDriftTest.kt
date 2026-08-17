@@ -4,6 +4,7 @@ import java.io.File
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 /**
@@ -15,8 +16,12 @@ class ConfigDriftTest {
 
     private fun keysDeclaredInTypesTs(): Set<String> {
         // Gradle runs unit tests with the module dir as the working directory.
+        // The source of truth is a SIBLING checkout (monorepo layout on dev
+        // machines). The standalone public-repo CI has no react-native next to
+        // it — there the guard has nothing to compare against and must skip,
+        // not fail (v0.1.4 tag CI 2026-08-17).
         val file = File("../../react-native/src/types.ts").canonicalFile
-        assertTrue("types.ts not found at ${file.path}", file.exists())
+        assumeTrue("types.ts not found at ${file.path} — skipping drift guard", file.exists())
         val source = file.readText()
 
         val start = source.indexOf("export interface Config {")
