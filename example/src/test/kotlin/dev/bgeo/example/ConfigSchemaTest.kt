@@ -61,6 +61,22 @@ class ConfigSchemaTest {
         )
     }
 
+    @Test
+    fun `keysWithPrefix returns every crashDetection field`() {
+        val keys = ConfigSchema.keysWithPrefix("crashDetection.")
+        assertEquals(
+            setOf("crashDetection.enabled", "crashDetection.minSpeed", "crashDetection.impactThreshold"),
+            keys.toSet(),
+        )
+    }
+
+    @Test
+    fun `crashDetection defaults match types_ts (off, 11_11 m per s, 4_0 g)`() {
+        assertEquals(false, ConfigSchema.defaultFor("crashDetection.enabled"))
+        assertEquals(11.11, ConfigSchema.defaultFor("crashDetection.minSpeed"))
+        assertEquals(4.0, ConfigSchema.defaultFor("crashDetection.impactThreshold"))
+    }
+
     // ---- ConfigCoerce.numberFromText: trap 7 (String.toDouble()/Double.toInt()
     // silently produce Infinity/NaN/saturated-Int instead of throwing) ----
 

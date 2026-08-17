@@ -2,6 +2,7 @@ package dev.bgeo.example
 
 import com.bgeo.sdk.BackgroundGeolocation
 import com.bgeo.sdk.Config
+import com.bgeo.sdk.CrashDetectionConfig
 import com.bgeo.sdk.NotificationConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -128,10 +129,13 @@ class ConfigStore(
     fun merged(into: Config): Config {
         var config = into
         for ((key, value) in _overrides.value) {
-            if (key.startsWith(NOTIFICATION_PREFIX)) continue
+            if (key.startsWith(NOTIFICATION_PREFIX) || key.startsWith(CRASH_DETECTION_PREFIX)) continue
             config = applyKeyToPatch(key, value, config)
         }
-        return config.copy(notification = overlayNotification(config.notification))
+        return config.copy(
+            notification = overlayNotification(config.notification),
+            crashDetection = overlayCrashDetection(config.crashDetection),
+        )
     }
 
     // ---- patch building for live setConfig / reset ------------------------
@@ -152,6 +156,8 @@ class ConfigStore(
     private fun patchForChangedKey(key: String, candidateOverrides: Map<String, Any>): Config =
         if (key.startsWith(NOTIFICATION_PREFIX)) {
             Config(notification = fullNotificationPatch(candidateOverrides))
+        } else if (key.startsWith(CRASH_DETECTION_PREFIX)) {
+            Config(crashDetection = fullCrashDetectionPatch(candidateOverrides))
         } else {
             applyKeyToPatch(key, candidateOverrides.getValue(key), Config())
         }
@@ -159,11 +165,16 @@ class ConfigStore(
     private fun resetPatch(keys: Set<String>): Config {
         var patch = Config()
         var rebuiltNotification = false
+        var rebuiltCrashDetection = false
         for (key in keys) {
             if (key.startsWith(NOTIFICATION_PREFIX)) {
                 if (rebuiltNotification) continue
                 rebuiltNotification = true
                 patch = patch.copy(notification = fullNotificationPatch(emptyMap()))
+            } else if (key.startsWith(CRASH_DETECTION_PREFIX)) {
+                if (rebuiltCrashDetection) continue
+                rebuiltCrashDetection = true
+                patch = patch.copy(crashDetection = fullCrashDetectionPatch(emptyMap()))
             } else {
                 val default = ConfigSchema.defaultFor(key) ?: continue
                 patch = applyKeyToPatch(key, default, patch)
@@ -202,6 +213,34 @@ class ConfigStore(
         "color" -> ConfigCoerce.string(raw)?.let { notification.copy(color = it) } ?: notification
         "priority" -> ConfigCoerce.int(raw)?.let { notification.copy(priority = it) } ?: notification
         else -> notification
+    }
+
+    /** [merged]'s crashDetection handling: only touches dot-keys this store actually has an override for. */
+    private fun overlayCrashDetection(base: CrashDetectionConfig?): CrashDetectionConfig? {
+        val overriddenKeys = ConfigSchema.keysWithPrefix(CRASH_DETECTION_PREFIX).filter { _overrides.value.containsKey(it) }
+        if (overriddenKeys.isEmpty()) return base
+        var crashDetection = base ?: CrashDetectionConfig()
+        for (key in overriddenKeys) {
+            crashDetection = assignCrashDetectionField(key.removePrefix(CRASH_DETECTION_PREFIX), _overrides.value.getValue(key), crashDetection)
+        }
+        return crashDetection
+    }
+
+    /** Live-push/reset's crashDetection handling: rebuilds EVERY field from `source` (override if present, else the schema default). */
+    private fun fullCrashDetectionPatch(source: Map<String, Any>): CrashDetectionConfig {
+        var crashDetection = CrashDetectionConfig()
+        for (key in ConfigSchema.keysWithPrefix(CRASH_DETECTION_PREFIX)) {
+            val raw = source[key] ?: ConfigSchema.defaultFor(key) ?: continue
+            crashDetection = assignCrashDetectionField(key.removePrefix(CRASH_DETECTION_PREFIX), raw, crashDetection)
+        }
+        return crashDetection
+    }
+
+    private fun assignCrashDetectionField(sub: String, raw: Any, crashDetection: CrashDetectionConfig): CrashDetectionConfig = when (sub) {
+        "enabled" -> ConfigCoerce.bool(raw)?.let { crashDetection.copy(enabled = it) } ?: crashDetection
+        "minSpeed" -> ConfigCoerce.double(raw)?.let { crashDetection.copy(minSpeed = it) } ?: crashDetection
+        "impactThreshold" -> ConfigCoerce.double(raw)?.let { crashDetection.copy(impactThreshold = it) } ?: crashDetection
+        else -> crashDetection
     }
 
     // ---- key -> Config property --------------------------------------
@@ -263,12 +302,13 @@ class ConfigStore(
             "logLevel" -> i()?.let { patch.copy(logLevel = it) } ?: patch
             "logMaxDays" -> i()?.let { patch.copy(logMaxDays = it) } ?: patch
             "diagnosticExtras" -> b()?.let { patch.copy(diagnosticExtras = it) } ?: patch
-            else -> patch // notification.* is handled by the caller; unknown keys are ignored.
+            else -> patch // notification.*/crashDetection.* are handled by the caller; unknown keys are ignored.
         }
     }
 
     companion object {
         private const val STORAGE_KEY = "bgeo:configOverrides"
         private const val NOTIFICATION_PREFIX = "notification."
+        private const val CRASH_DETECTION_PREFIX = "crashDetection."
     }
 }

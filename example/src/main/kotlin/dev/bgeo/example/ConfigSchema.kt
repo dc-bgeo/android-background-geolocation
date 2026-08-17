@@ -271,6 +271,14 @@ object ConfigSchema {
             ),
         ),
         ConfigSection(
+            title = "Crash detection",
+            fields = listOf(
+                ConfigField(key = "crashDetection.enabled", label = "Crash detection", type = ConfigFieldType.BOOL, default = false),
+                ConfigField(key = "crashDetection.minSpeed", label = "Crash min speed", type = ConfigFieldType.NUMBER, default = 11.11, unit = "m/s"),
+                ConfigField(key = "crashDetection.impactThreshold", label = "Crash impact threshold", type = ConfigFieldType.NUMBER, default = 4.0, unit = "g"),
+            ),
+        ),
+        ConfigSection(
             title = "Application",
             fields = listOf(
                 // BGGeoEngine.kt:1077 — `?: 60.0`.

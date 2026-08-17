@@ -65,6 +65,27 @@ data class AuthorizationConfig(
 }
 
 /**
+ * On-device collision detection. Off by default. When enabled, the engine
+ * samples the accelerometer at ~50 Hz while moving and emits a `crash` event
+ * when an impact signature (>= impactThreshold g, sustained, multi-axis,
+ * pre-impact speed >= minSpeed) is followed by a speed collapse.
+ */
+data class CrashDetectionConfig(
+    /** default false */
+    val enabled: Boolean? = null,
+    /** Pre-impact speed gate in m/s. Default 11.11 (40 km/h). */
+    val minSpeed: Double? = null,
+    /** Impact peak threshold in g. Default 4.0. */
+    val impactThreshold: Double? = null,
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        enabled?.let { put("enabled", it) }
+        minSpeed?.let { put("minSpeed", it) }
+        impactThreshold?.let { put("impactThreshold", it) }
+    }
+}
+
+/**
  * Mirrors `interface Config` in `react-native/src/types.ts` (the cross-SDK
  * source of truth for all four front-ends) property-for-property. Guarded
  * against drift by [ConfigDriftTest].
@@ -196,6 +217,8 @@ data class Config(
     /** Requests a synthetic ENTER for geofences already-inside on registration
      * (iOS requestStateForRegion / Android INITIAL_TRIGGER_ENTER). Default true. */
     val geofenceInitialTriggerEntry: Boolean? = null,
+    /** On-device collision detection. Off by default. See [CrashDetectionConfig]. */
+    val crashDetection: CrashDetectionConfig? = null,
 ) {
     /**
      * `setConfig` is a PATCH: this OMITS every `null` property so an
@@ -266,6 +289,7 @@ data class Config(
         geofenceProximityRadius?.let { json.put("geofenceProximityRadius", it) }
         maxMonitoredGeofences?.let { json.put("maxMonitoredGeofences", it) }
         geofenceInitialTriggerEntry?.let { json.put("geofenceInitialTriggerEntry", it) }
+        crashDetection?.let { json.put("crashDetection", it.toJson()) }
 
         return json
     }
