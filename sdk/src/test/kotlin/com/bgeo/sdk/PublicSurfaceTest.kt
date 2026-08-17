@@ -412,6 +412,29 @@ class PublicSurfaceTest {
     }
 
     @Test
+    fun `CrashEvent constructs and every property reads back`() {
+        val location = Location(
+            "u", "t", null, 0.0,
+            Coords(0.0, 0.0, 0.0, null, null, null, null, null, null, null),
+            MotionActivity(ActivityType.STILL, 100),
+            Battery(1.0, false),
+            false, null, null, null,
+        )
+        val event = CrashEvent(
+            timestamp = "2026-08-17T10:00:00.000Z",
+            peakG = 4.2,
+            impactDurationMs = 180.0,
+            preImpactSpeedMps = 12.5,
+            location = location,
+        )
+        assertEquals("2026-08-17T10:00:00.000Z", event.timestamp)
+        assertEquals(4.2, event.peakG, 0.0)
+        assertEquals(180.0, event.impactDurationMs, 0.0)
+        assertEquals(12.5, event.preImpactSpeedMps, 0.0)
+        assertSame(location, event.location)
+    }
+
+    @Test
     fun `GeofenceEvent constructs and every property reads back`() {
         val extras = JSONObject().put("k", "v")
         val location = Location(

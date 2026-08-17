@@ -274,6 +274,27 @@ data class MotionChangeEvent(
     }
 }
 
+data class CrashEvent(
+    val timestamp: String,
+    val peakG: Double,
+    val impactDurationMs: Double,
+    val preImpactSpeedMps: Double,
+    val location: Location?,
+) {
+    companion object {
+        fun from(json: JSONObject): CrashEvent? {
+            val timestamp = json.stringOrNull("timestamp") ?: return null
+            val peakG = json.doubleOrNull("peakG") ?: return null
+            val impactDurationMs = json.doubleOrNull("impactDurationMs") ?: return null
+            val preImpactSpeedMps = json.doubleOrNull("preImpactSpeedMps") ?: return null
+            // `location` may be null - the engine can't always attach a fix to
+            // the crash instant (e.g. no recent fix within tolerance).
+            val location = json.objectOrNull("location")?.let { Location.from(it) }
+            return CrashEvent(timestamp, peakG, impactDurationMs, preImpactSpeedMps, location)
+        }
+    }
+}
+
 enum class GeofenceAction(val wire: String) {
     ENTER("ENTER"),
     EXIT("EXIT"),

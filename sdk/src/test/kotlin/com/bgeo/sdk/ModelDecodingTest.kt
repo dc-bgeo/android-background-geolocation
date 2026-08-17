@@ -118,6 +118,20 @@ class ModelDecodingTest {
     }
 
     @Test
+    fun `crash event accepts JSONObject NULL location`() {
+        val json = JSONObject()
+            .put("timestamp", "2026-08-17T10:00:00.000Z")
+            .put("peakG", 4.2)
+            .put("impactDurationMs", 180.0)
+            .put("preImpactSpeedMps", 12.5)
+            .put("location", JSONObject.NULL)
+        val event = CrashEvent.from(json)
+        assertNotNull(event)
+        assertEquals(4.2, event!!.peakG, 0.0001)
+        assertNull(event.location)
+    }
+
+    @Test
     fun `unknown activity type falls back to UNKNOWN rather than failing`() {
         val activity = MotionActivity.from(JSONObject().put("type", "teleporting").put("confidence", 10))
         assertNotNull(activity)

@@ -214,6 +214,12 @@ object BackgroundGeolocation {
     val authorizationEvents: Flow<JSONObject> get() = hub.flow("authorization")
 
     /**
+     * Crash detection. Only armed while moving, and off by default
+     * (`crashDetection.enabled`) - see [Config.crashDetection].
+     */
+    fun crashEvents(): Flow<CrashEvent> = hub.flow("crash").mapNotNull(CrashEvent::from)
+
+    /**
      * Every `locationerror` the engine emits — a failing [watchPosition] tick,
      * or [watchPosition] itself called on an unlicensed build (both sites
      * short-circuit with this event, no callback and no throw). Without a
@@ -247,6 +253,10 @@ object BackgroundGeolocation {
 
     fun onAuthorization(handler: (JSONObject) -> Unit): Subscription =
         hub.subscribe("authorization", handler)
+
+    /** Callback-style twin of [crashEvents]. */
+    fun onCrash(handler: (CrashEvent) -> Unit): Subscription =
+        hub.subscribe("crash") { json -> CrashEvent.from(json)?.let(handler) }
 
     /** See [locationErrors] — the callback-style twin of the same event. */
     fun onLocationError(handler: (BGeoException) -> Unit): Subscription =
