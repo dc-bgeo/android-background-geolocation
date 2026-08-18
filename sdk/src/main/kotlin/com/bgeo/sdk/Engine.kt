@@ -38,6 +38,9 @@ internal interface Engine {
     fun startWatch(options: JSONObject?)
     fun stopWatch()
 
+    fun startHeading(options: JSONObject?)
+    fun stopHeading()
+
     fun hasFineOrCoarse(): Boolean
     fun hasBackground(): Boolean
     fun hasActivityRecognition(): Boolean
@@ -98,6 +101,9 @@ internal object LiveEngine : Engine {
         BGGeoEngine.getCurrentPosition(options, callback)
     override fun startWatch(options: JSONObject?) = BGGeoEngine.startWatch(options)
     override fun stopWatch() = BGGeoEngine.stopWatch()
+
+    override fun startHeading(options: JSONObject?) = BGGeoEngine.startHeading(options)
+    override fun stopHeading() = BGGeoEngine.stopHeading()
 
     override fun hasFineOrCoarse(): Boolean = BGGeoEngine.hasFineOrCoarse()
     override fun hasBackground(): Boolean = BGGeoEngine.hasBackground()

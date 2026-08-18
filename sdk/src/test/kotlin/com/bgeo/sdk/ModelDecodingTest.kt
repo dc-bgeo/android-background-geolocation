@@ -132,6 +132,65 @@ class ModelDecodingTest {
     }
 
     @Test
+    fun `heading event decodes the wire shape`() {
+        val json = JSONObject()
+            .put("heading", 91.5)
+            .put("accuracy", 3)
+            .put("isTrue", true)
+        val event = HeadingEvent.from(json)
+        assertNotNull(event)
+        assertEquals(91.5, event!!.heading, 0.0001)
+        assertEquals(3, event.accuracy)
+        assertEquals(true, event.isTrue)
+    }
+
+    @Test
+    fun `heading event keeps a zero heading and a zero calibration level`() {
+        // Due north and SENSOR_STATUS_UNRELIABLE are both real, meaningful
+        // readings the app must be able to see - not missing fields.
+        val json = JSONObject()
+            .put("heading", 0.0)
+            .put("accuracy", 0)
+            .put("isTrue", false)
+        val event = HeadingEvent.from(json)
+        assertNotNull(event)
+        assertEquals(0.0, event!!.heading, 0.0001)
+        assertEquals(0, event.accuracy)
+        assertEquals(false, event.isTrue)
+    }
+
+    @Test
+    fun `heading event drops a payload missing or mistyping a required field`() {
+        val full = { JSONObject().put("heading", 91.5).put("accuracy", 3).put("isTrue", true) }
+        assertNull(HeadingEvent.from(JSONObject().put("accuracy", 3).put("isTrue", true)))
+        assertNull(HeadingEvent.from(JSONObject().put("heading", 91.5).put("isTrue", true)))
+        assertNull(HeadingEvent.from(JSONObject().put("heading", 91.5).put("accuracy", 3)))
+        assertNull(HeadingEvent.from(full().put("heading", JSONObject.NULL)))
+        assertNull(HeadingEvent.from(full().put("accuracy", JSONObject.NULL)))
+        assertNull(HeadingEvent.from(full().put("isTrue", JSONObject.NULL)))
+        // A mistyped value must not be coerced to a fabricated default -
+        // `optInt("accuracy")` on a String would silently yield 0, i.e. a
+        // believable "uncalibrated" level an app would act on, and
+        // `optBoolean("isTrue")` would yield a believable `false`.
+        assertNull(HeadingEvent.from(full().put("accuracy", "3")))
+        assertNull(HeadingEvent.from(full().put("isTrue", "true")))
+        // `heading` goes through doubleOrNull, whose contract differs by
+        // design: org.json PARSES a numeric string, so only a non-numeric one
+        // reads as absent - see `JsonDecodingTest`.
+        assertNull(HeadingEvent.from(full().put("heading", "oops")))
+    }
+
+    @Test
+    fun `heading event reads a whole-number heading stored as Int`() {
+        // org.json stores whole numbers as Int; a due-north sample must not
+        // read as a missing field.
+        val json = JSONObject().put("heading", 90).put("accuracy", 3).put("isTrue", true)
+        val event = HeadingEvent.from(json)
+        assertNotNull(event)
+        assertEquals(90.0, event!!.heading, 0.0001)
+    }
+
+    @Test
     fun `unknown activity type falls back to UNKNOWN rather than failing`() {
         val activity = MotionActivity.from(JSONObject().put("type", "teleporting").put("confidence", 10))
         assertNotNull(activity)

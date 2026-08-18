@@ -297,6 +297,33 @@ class FacadeLifecycleTest {
         assertEquals(1, engine.stopWatchCallCount)
     }
 
+    // ---- heading --------------------------------------------------------------
+
+    @Test
+    fun `watchHeading delegates options to the engine`() {
+        BackgroundGeolocation.watchHeading(WatchHeadingOptions(smoothingTauMs = 250.0, minDeltaDeg = 2.0))
+        assertEquals(1, engine.startHeadingOptions.size)
+        val options = engine.startHeadingOptions.first()!!
+        assertEquals(250.0, options.getDouble("smoothingTauMs"), 0.0001)
+        assertEquals(2.0, options.getDouble("minDeltaDeg"), 0.0001)
+        // An unset option is OMITTED, not sent as a null the engine would have
+        // to defend against - its own default stands.
+        assertFalse(options.has("minIntervalMs"))
+    }
+
+    @Test
+    fun `watchHeading with no options sends an empty payload`() {
+        BackgroundGeolocation.watchHeading()
+        assertEquals(1, engine.startHeadingOptions.size)
+        assertEquals(0, engine.startHeadingOptions.first()!!.length())
+    }
+
+    @Test
+    fun `stopWatchingHeading delegates to the engine`() {
+        BackgroundGeolocation.stopWatchingHeading()
+        assertEquals(1, engine.stopHeadingCallCount)
+    }
+
     // ---- events -----------------------------------------------------------
 
     @Test
@@ -321,6 +348,44 @@ class FacadeLifecycleTest {
         BackgroundGeolocation.onPowerSaveChange { received = it }
         engine.emit("powersavechange", JSONObject().put("isPowerSaveMode", true))
         assertEquals(true, received)
+    }
+
+    @Test
+    fun `onHeading delivers decoded heading events and drops undecodable ones`() {
+        val received = mutableListOf<HeadingEvent>()
+        BackgroundGeolocation.onHeading { received.add(it) }
+        engine.emit(
+            "heading",
+            JSONObject().put("heading", 91.5).put("accuracy", 3).put("isTrue", true),
+        )
+        engine.emit("heading", JSONObject().put("accuracy", 3).put("isTrue", true))
+
+        assertEquals(1, received.size)
+        assertEquals(91.5, received.first().heading, 0.0001)
+        assertEquals(3, received.first().accuracy)
+        assertEquals(true, received.first().isTrue)
+    }
+
+    @Test
+    fun `headingEvents Flow delivers a decoded event to a subscriber`() = runBlocking {
+        val received = LinkedBlockingQueue<HeadingEvent>()
+        val job = launch(Dispatchers.Default) {
+            BackgroundGeolocation.headingEvents.collect { received.add(it) }
+        }
+        val deadline = System.currentTimeMillis() + 2_000
+        while (BackgroundGeolocation.hub.subscriberCount("heading") == 0) {
+            if (System.currentTimeMillis() > deadline) error("timed out waiting for a heading subscriber")
+            Thread.sleep(5)
+        }
+
+        engine.emit(
+            "heading",
+            JSONObject().put("heading", 91.5).put("accuracy", 3).put("isTrue", true),
+        )
+
+        val event = received.poll(2, TimeUnit.SECONDS)
+        assertEquals(91.5, event!!.heading, 0.0001)
+        job.cancelAndJoin()
     }
 
     // ---- onLocationError / locationErrors (C1) -----------------------------

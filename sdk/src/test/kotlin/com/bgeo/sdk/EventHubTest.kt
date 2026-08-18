@@ -97,6 +97,36 @@ class EventHubTest {
         assertEquals(63, received.last())
     }
 
+    /**
+     * `heading` is the only channel whose events exist solely because the
+     * caller armed the source ([BackgroundGeolocation.watchHeading]), so the
+     * ordering trap is reachable by ordinary use: arming the compass before
+     * subscribing lets a high-frequency feed fill the pre-subscriber buffer,
+     * and the first subscriber then gets up to 64 stale samples replayed in
+     * one burst. Documented behaviour, not a bug - subscribe first, then call
+     * `watchHeading`.
+     */
+    @Test
+    fun `heading samples emitted before the first subscriber replay from the buffer`() {
+        val engine = FakeEngine()
+        val hub = EventHub()
+        hub.attach(engine)
+
+        for (i in 0 until 100) {
+            engine.emit(
+                "heading",
+                JSONObject().put("heading", i.toDouble()).put("accuracy", 3).put("isTrue", true),
+            )
+        }
+
+        val received = mutableListOf<Double>()
+        hub.subscribe("heading") { HeadingEvent.from(it)?.let { event -> received.add(event.heading) } }
+
+        assertEquals(64, received.size)
+        assertEquals(0.0, received.first(), 0.0001)
+        assertEquals(63.0, received.last(), 0.0001)
+    }
+
     @Test
     fun `buffer is drained so a second subscriber does not replay it`() {
         val engine = FakeEngine()

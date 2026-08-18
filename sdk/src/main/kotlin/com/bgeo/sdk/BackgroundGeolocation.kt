@@ -157,6 +157,40 @@ object BackgroundGeolocation {
         engine.stopWatch()
     }
 
+    // ---- compass heading --------------------------------------------------
+
+    /**
+     * Arms the compass. Each admitted sample arrives on its own channel —
+     * subscribe via [headingEvents]/[onHeading]; heading is NOT part of the
+     * `location` payload.
+     *
+     * Unlike [crashEvents], this feed is explicitly started (like
+     * [watchPosition]) and needs no config flag. Calling it a second time
+     * RESTARTS the session with the new tuning — no smoothing or emission
+     * state survives. It is a silent no-op on a device with no usable
+     * magnetometer.
+     *
+     * **Re-arm after a restart.** [stop] tears the heading feed down on BOTH
+     * platforms, so a [stop]/[start] cycle leaves the compass off until you
+     * call this again. The feed is independent of tracking otherwise: it
+     * needs no location permission and can run without [start].
+     */
+    fun watchHeading(options: WatchHeadingOptions = WatchHeadingOptions()) {
+        engine.startHeading(options.toJson())
+    }
+
+    /**
+     * Disarms the compass. Safe to call when none is running.
+     *
+     * The engine's sensor thread is retired asynchronously (`quitSafely`), so
+     * ONE already-queued heading event may still reach subscribers momentarily
+     * after this returns. Drop your subscription, don't assume the last event
+     * has landed.
+     */
+    fun stopWatchingHeading() {
+        engine.stopHeading()
+    }
+
     // ---- provider / power -------------------------------------------------
 
     /**
@@ -220,6 +254,12 @@ object BackgroundGeolocation {
     val crashEvents: Flow<CrashEvent> get() = hub.flow("crash").mapNotNull(CrashEvent::from)
 
     /**
+     * Compass samples. Silent until [watchHeading] arms the feed — and silent
+     * again after [stop], which tears it down (re-arm with [watchHeading]).
+     */
+    val headingEvents: Flow<HeadingEvent> get() = hub.flow("heading").mapNotNull(HeadingEvent::from)
+
+    /**
      * Every `locationerror` the engine emits — a failing [watchPosition] tick,
      * or [watchPosition] itself called on an unlicensed build (both sites
      * short-circuit with this event, no callback and no throw). Without a
@@ -257,6 +297,10 @@ object BackgroundGeolocation {
     /** Callback-style twin of [crashEvents]. */
     fun onCrash(handler: (CrashEvent) -> Unit): Subscription =
         hub.subscribe("crash") { json -> CrashEvent.from(json)?.let(handler) }
+
+    /** Callback-style twin of [headingEvents]. */
+    fun onHeading(handler: (HeadingEvent) -> Unit): Subscription =
+        hub.subscribe("heading") { json -> HeadingEvent.from(json)?.let(handler) }
 
     /** See [locationErrors] — the callback-style twin of the same event. */
     fun onLocationError(handler: (BGeoException) -> Unit): Subscription =
@@ -319,5 +363,29 @@ data class WatchPositionOptions(
         desiredAccuracy?.let { put("desiredAccuracy", it) }
         persist?.let { put("persist", it) }
         extras?.let { put("extras", it) }
+    }
+}
+
+/**
+ * Options for [BackgroundGeolocation.watchHeading]. Every field is optional
+ * and tunes the engine's shared heading policy; leaving one `null` omits it
+ * from the payload so the engine's own default applies.
+ *
+ * @property smoothingTauMs time constant of the exponential azimuth smoother,
+ *   in milliseconds. Larger is steadier and laggier.
+ * @property minIntervalMs floor on the interval between two emitted events,
+ *   in milliseconds.
+ * @property minDeltaDeg floor on the change in heading, in DEGREES, needed to
+ *   emit before [minIntervalMs] has elapsed.
+ */
+data class WatchHeadingOptions(
+    val smoothingTauMs: Double? = null,
+    val minIntervalMs: Double? = null,
+    val minDeltaDeg: Double? = null,
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        smoothingTauMs?.let { put("smoothingTauMs", it) }
+        minIntervalMs?.let { put("minIntervalMs", it) }
+        minDeltaDeg?.let { put("minDeltaDeg", it) }
     }
 }

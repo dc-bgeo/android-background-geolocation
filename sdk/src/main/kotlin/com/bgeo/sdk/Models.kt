@@ -295,6 +295,41 @@ data class CrashEvent(
     }
 }
 
+/**
+ * One admitted compass sample — see [BackgroundGeolocation.watchHeading],
+ * which is what arms the feed emitting these.
+ *
+ * @property heading smoothed azimuth in degrees, `[0, 360)`, clockwise from north.
+ * @property accuracy the platform's magnetometer CALIBRATION LEVEL —
+ *   `SensorManager.SENSOR_STATUS_UNRELIABLE` (0) through
+ *   `SENSOR_STATUS_ACCURACY_HIGH` (3). This is a platform-native passthrough
+ *   and is deliberately NOT the same quantity as the iOS facade's
+ *   `HeadingEvent.accuracy`, which is a `Double` estimated error in DEGREES
+ *   (negative there means invalid). Neither is convertible to the other, so
+ *   each SDK types it natively rather than inventing a lowest-common-
+ *   denominator scale. Until the OS reports a level, this is `0`.
+ * @property isTrue `true` when [heading] is relative to TRUE north. The engine
+ *   needs a location fix to derive the magnetic declination; until it has one
+ *   it reports magnetic north and this is `false`.
+ */
+data class HeadingEvent(
+    val heading: Double,
+    val accuracy: Int,
+    val isTrue: Boolean,
+) {
+    companion object {
+        fun from(json: JSONObject): HeadingEvent? {
+            val heading = json.doubleOrNull("heading") ?: return null
+            // intOrNull, not optInt: a mistyped `accuracy` must drop the
+            // record rather than decode as a fabricated level 0 ("unreliable"),
+            // which an app would legitimately act on by hiding its compass.
+            val accuracy = json.intOrNull("accuracy") ?: return null
+            val isTrue = json.boolOrNull("isTrue") ?: return null
+            return HeadingEvent(heading, accuracy, isTrue)
+        }
+    }
+}
+
 enum class GeofenceAction(val wire: String) {
     ENTER("ENTER"),
     EXIT("EXIT"),

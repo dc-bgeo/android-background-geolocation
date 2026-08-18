@@ -125,6 +125,18 @@ internal class FakeEngine : Engine {
         stopWatchCallCount++
     }
 
+    // ---- compass heading --------------------------------------------------
+
+    val startHeadingOptions = mutableListOf<JSONObject?>()
+    override fun startHeading(options: JSONObject?) {
+        startHeadingOptions.add(options)
+    }
+
+    var stopHeadingCallCount = 0
+    override fun stopHeading() {
+        stopHeadingCallCount++
+    }
+
     // ---- provider / permission state -------------------------------------
 
     var stubbedHasFineOrCoarse = false

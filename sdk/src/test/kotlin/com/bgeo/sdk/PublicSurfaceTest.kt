@@ -4,6 +4,7 @@ import androidx.activity.result.ActivityResultCaller
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -77,6 +78,26 @@ class PublicSurfaceTest {
         assertEquals(DesiredAccuracy.MEDIUM.value, options.desiredAccuracy)
         assertEquals(false, options.persist)
         assertSame(extras, options.extras)
+    }
+
+    @Test
+    fun `WatchHeadingOptions constructs and every property reads back`() {
+        val options = WatchHeadingOptions(
+            smoothingTauMs = 250.0,
+            minIntervalMs = 100.0,
+            minDeltaDeg = 2.0,
+        )
+        assertEquals(250.0, options.smoothingTauMs)
+        assertEquals(100.0, options.minIntervalMs)
+        assertEquals(2.0, options.minDeltaDeg)
+
+        // Every field is optional; the default constructor sends the engine
+        // nothing and lets its own tuning defaults stand.
+        val defaults = WatchHeadingOptions()
+        assertNull(defaults.smoothingTauMs)
+        assertNull(defaults.minIntervalMs)
+        assertNull(defaults.minDeltaDeg)
+        assertEquals(0, defaults.toJson().length())
     }
 
     // ---- config (Config.kt) -----------------------------------------------
@@ -432,6 +453,21 @@ class PublicSurfaceTest {
         assertEquals(180.0, event.impactDurationMs, 0.0)
         assertEquals(12.5, event.preImpactSpeedMps, 0.0)
         assertSame(location, event.location)
+    }
+
+    @Test
+    fun `HeadingEvent constructs and every property reads back`() {
+        val event = HeadingEvent(
+            heading = 91.5,
+            // Int, not Double - Android carries the magnetometer CALIBRATION
+            // LEVEL (0-3). The iOS facade's twin is a Double error in degrees;
+            // see `HeadingEvent`.
+            accuracy = 3,
+            isTrue = true,
+        )
+        assertEquals(91.5, event.heading, 0.0)
+        assertEquals(3, event.accuracy)
+        assertEquals(true, event.isTrue)
     }
 
     @Test
