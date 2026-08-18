@@ -319,8 +319,8 @@ class FacadeLifecycleTest {
     }
 
     @Test
-    fun `stopWatchingHeading delegates to the engine`() {
-        BackgroundGeolocation.stopWatchingHeading()
+    fun `stopWatchHeading delegates to the engine`() {
+        BackgroundGeolocation.stopWatchHeading()
         assertEquals(1, engine.stopHeadingCallCount)
     }
 

@@ -187,7 +187,7 @@ object BackgroundGeolocation {
      * after this returns. Drop your subscription, don't assume the last event
      * has landed.
      */
-    fun stopWatchingHeading() {
+    fun stopWatchHeading() {
         engine.stopHeading()
     }
 
