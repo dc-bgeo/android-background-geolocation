@@ -137,6 +137,11 @@ internal class FakeEngine : Engine {
         stopHeadingCallCount++
     }
 
+    val setAppForegroundCalls = mutableListOf<Boolean>()
+    override fun setAppForeground(foreground: Boolean) {
+        setAppForegroundCalls.add(foreground)
+    }
+
     // ---- provider / permission state -------------------------------------
 
     var stubbedHasFineOrCoarse = false

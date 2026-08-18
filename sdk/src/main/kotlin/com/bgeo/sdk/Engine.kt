@@ -41,6 +41,15 @@ internal interface Engine {
     fun startHeading(options: JSONObject?)
     fun stopHeading()
 
+    /**
+     * Process foreground state. The engine's ONLY pause/resume trigger for an
+     * active compass: while false it drops the 50 Hz sensor subscription and
+     * resets the smoother, restoring both on the way back. Nothing else in the
+     * engine reads it, so a facade that never calls this leaves a
+     * `watchHeading` session sampling forever behind a backgrounded app.
+     */
+    fun setAppForeground(foreground: Boolean)
+
     fun hasFineOrCoarse(): Boolean
     fun hasBackground(): Boolean
     fun hasActivityRecognition(): Boolean
@@ -104,6 +113,7 @@ internal object LiveEngine : Engine {
 
     override fun startHeading(options: JSONObject?) = BGGeoEngine.startHeading(options)
     override fun stopHeading() = BGGeoEngine.stopHeading()
+    override fun setAppForeground(foreground: Boolean) { BGGeoEngine.appForeground = foreground }
 
     override fun hasFineOrCoarse(): Boolean = BGGeoEngine.hasFineOrCoarse()
     override fun hasBackground(): Boolean = BGGeoEngine.hasBackground()

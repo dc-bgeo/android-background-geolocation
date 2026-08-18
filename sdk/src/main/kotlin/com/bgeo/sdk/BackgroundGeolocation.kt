@@ -29,16 +29,25 @@ object BackgroundGeolocation {
     internal var hub: EventHub = EventHub()
 
     /**
-     * App foreground is one of the log-flush piggyback triggers: while
-     * foreground, the logger also debounce-flushes each line so a watching
-     * console is near-realtime (`BGGeoLogger.foreground` gates a 3s
-     * trailing-edge flush for SUBSEQUENT lines) — mirrors
-     * `BackgroundGeolocationModule.kt:49,54` / `BGeoFlutterPlugin.kt:56,59`.
-     * [Engine.flushLogs] additionally drains whatever backlog accumulated
-     * while backgrounded — the flag alone does nothing for lines already
-     * written, and that backlog is exactly what a developer opens the web
-     * console to read (same pairing as `BackgroundGeolocationModule.kt:49-50`
-     * / `BGeoFlutterPlugin.kt:56-57`).
+     * The process-lifecycle fan-out. Two independent engine flags ride this
+     * one observer, because on Android nothing else tells the engine the app
+     * moved:
+     *
+     * 1. **Logger foreground.** While foreground, the logger also
+     *    debounce-flushes each line so a watching console is near-realtime
+     *    (`BGGeoLogger.foreground` gates a 3s trailing-edge flush for
+     *    SUBSEQUENT lines) — mirrors `BackgroundGeolocationModule.kt:49,54` /
+     *    `BGeoFlutterPlugin.kt:56,59`. [Engine.flushLogs] additionally drains
+     *    whatever backlog accumulated while backgrounded — the flag alone does
+     *    nothing for lines already written, and that backlog is exactly what a
+     *    developer opens the web console to read (same pairing as
+     *    `BackgroundGeolocationModule.kt:49-50` / `BGeoFlutterPlugin.kt:56-57`).
+     * 2. **Engine app foreground.** [Engine.setAppForeground] is the engine's
+     *    ONLY pause/resume trigger for an active [watchHeading] compass. Miss
+     *    it and a `watchHeading` session keeps a 50 Hz sensor subscription
+     *    alive forever after the user presses Home — the exact opposite of the
+     *    foreground-only contract [watchHeading] documents. iOS needs no
+     *    equivalent: its engine self-observes `UIApplication` notifications.
      *
      * Extracted from [attach] into a standalone property (rather than an
      * anonymous object built inline) so it's unit-testable: `DefaultLifecycleObserver`
@@ -46,13 +55,15 @@ object BackgroundGeolocation {
      * `onStart`/`onStop` directly against a stub `LifecycleOwner` exercises the
      * real logic without a device. See `FacadeLifecycleTest`.
      */
-    internal val loggerForegroundObserver = object : DefaultLifecycleObserver {
+    internal val processForegroundObserver = object : DefaultLifecycleObserver {
         override fun onStart(owner: LifecycleOwner) {
             engine.setLoggerForeground(true)
+            engine.setAppForeground(true)
             engine.flushLogs()
         }
         override fun onStop(owner: LifecycleOwner) {
             engine.setLoggerForeground(false)
+            engine.setAppForeground(false)
         }
     }
 
@@ -73,7 +84,7 @@ object BackgroundGeolocation {
     fun attach(context: Context) {
         engine.init(context)
         attachEventHubAndResume()
-        ProcessLifecycleOwner.get().lifecycle.addObserver(loggerForegroundObserver)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(processForegroundObserver)
     }
 
     /**

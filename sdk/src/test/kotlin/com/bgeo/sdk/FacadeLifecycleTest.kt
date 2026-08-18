@@ -87,18 +87,22 @@ class FacadeLifecycleTest {
         )
     }
 
-    @Test
-    fun `loggerForegroundObserver flags foreground and flushes the backlog on start, clears the flag on stop`() {
-        // DefaultLifecycleObserver needs no Android runtime -- only
-        // ProcessLifecycleOwner.get() (in attach()) does -- so onStart/onStop
-        // are callable directly against a stub LifecycleOwner never actually
-        // dereferenced by the observer body.
-        val owner = object : LifecycleOwner {
-            override val lifecycle: Lifecycle get() = error("unused by setLoggerForeground/flushLogs")
-        }
+    /**
+     * DefaultLifecycleObserver needs no Android runtime -- only
+     * ProcessLifecycleOwner.get() (in attach()) does -- so onStart/onStop are
+     * callable directly against a stub LifecycleOwner never actually
+     * dereferenced by the observer body.
+     */
+    private fun stubLifecycleOwner() = object : LifecycleOwner {
+        override val lifecycle: Lifecycle get() = error("unused by the observer body")
+    }
 
-        BackgroundGeolocation.loggerForegroundObserver.onStart(owner)
-        BackgroundGeolocation.loggerForegroundObserver.onStop(owner)
+    @Test
+    fun `processForegroundObserver flags foreground and flushes the backlog on start, clears the flag on stop`() {
+        val owner = stubLifecycleOwner()
+
+        BackgroundGeolocation.processForegroundObserver.onStart(owner)
+        BackgroundGeolocation.processForegroundObserver.onStop(owner)
 
         assertEquals(listOf(true, false), engine.setLoggerForegroundCalls)
         assertEquals(
@@ -107,6 +111,26 @@ class FacadeLifecycleTest {
             1,
             engine.flushLogsCallCount,
         )
+    }
+
+    /**
+     * The engine's `appForeground` setter is its ONLY pause/resume trigger for
+     * an active [BackgroundGeolocation.watchHeading] compass, and this observer
+     * is the only thing in the Kotlin SDK that drives it. Without it a
+     * `watchHeading` session survives the user pressing Home with its 50 Hz
+     * sensor subscription intact -- the exact opposite of the foreground-only
+     * contract `watchHeading` documents, and invisible to every other test here
+     * because nothing else in the facade reads the flag.
+     */
+    @Test
+    fun `processForegroundObserver drives engine appForeground both ways`() {
+        val owner = stubLifecycleOwner()
+
+        BackgroundGeolocation.processForegroundObserver.onStart(owner)
+        assertEquals(listOf(true), engine.setAppForegroundCalls)
+
+        BackgroundGeolocation.processForegroundObserver.onStop(owner)
+        assertEquals(listOf(true, false), engine.setAppForegroundCalls)
     }
 
     // ---- ready --------------------------------------------------------------
