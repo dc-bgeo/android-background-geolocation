@@ -170,10 +170,22 @@ object BackgroundGeolocation {
      * state survives. It is a silent no-op on a device with no usable
      * magnetometer.
      *
+     * **Foreground-only.** The engine unregisters the sensor listeners
+     * whenever the app goes to the background and re-registers them on return
+     * to the foreground — a 50 Hz sensor subscription behind a backgrounded
+     * app is pure battery burn. This is automatic and needs nothing from you,
+     * but it does mean [headingEvents] goes quiet for as long as the app is
+     * backgrounded; that is expected, not a fault. The smoothing window is
+     * reset across the pause, so the first sample after returning seeds fresh
+     * rather than easing out of a heading the device left minutes ago. Arming
+     * while already backgrounded is fine — the session starts subscribed to
+     * nothing and begins delivering at the next foreground.
+     *
      * **Re-arm after a restart.** [stop] tears the heading feed down on BOTH
      * platforms, so a [stop]/[start] cycle leaves the compass off until you
-     * call this again. The feed is independent of tracking otherwise: it
-     * needs no location permission and can run without [start].
+     * call this again. Tracking is otherwise orthogonal to the compass: it
+     * needs no location permission and runs without [start] — but "no [start]
+     * needed" is not "always on", see the foreground note above.
      */
     fun watchHeading(options: WatchHeadingOptions = WatchHeadingOptions()) {
         engine.startHeading(options.toJson())
@@ -254,8 +266,12 @@ object BackgroundGeolocation {
     val crashEvents: Flow<CrashEvent> get() = hub.flow("crash").mapNotNull(CrashEvent::from)
 
     /**
-     * Compass samples. Silent until [watchHeading] arms the feed — and silent
-     * again after [stop], which tears it down (re-arm with [watchHeading]).
+     * Compass samples. Silent until [watchHeading] arms the feed, silent again
+     * after [stop], which tears it down (re-arm with [watchHeading]) — and
+     * silent for as long as the app is BACKGROUNDED, which is by design: the
+     * engine parks the sensors on the way out and resumes them on the way back
+     * in. See [watchHeading] for the whole picture before filing background
+     * silence as a bug.
      */
     val headingEvents: Flow<HeadingEvent> get() = hub.flow("heading").mapNotNull(HeadingEvent::from)
 
@@ -298,7 +314,10 @@ object BackgroundGeolocation {
     fun onCrash(handler: (CrashEvent) -> Unit): Subscription =
         hub.subscribe("crash") { json -> CrashEvent.from(json)?.let(handler) }
 
-    /** Callback-style twin of [headingEvents]. */
+    /**
+     * Callback-style twin of [headingEvents] — including its silences: no
+     * samples arrive while the app is backgrounded (see [watchHeading]).
+     */
     fun onHeading(handler: (HeadingEvent) -> Unit): Subscription =
         hub.subscribe("heading") { json -> HeadingEvent.from(json)?.let(handler) }
 
