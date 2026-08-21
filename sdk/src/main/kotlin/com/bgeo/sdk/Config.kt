@@ -86,6 +86,27 @@ data class CrashDetectionConfig(
 }
 
 /**
+ * On-device distracted-driving detection. Off by default. While moving, the
+ * engine watches the shared ~50 Hz accelerometer stream (plus screen state
+ * on Android) for a phone-handling signature and emits a `distraction` event
+ * when an episode closes.
+ */
+data class DistractionDetectionConfig(
+    /** default false */
+    val enabled: Boolean? = null,
+    /** Episode-open speed gate in m/s. Default 5.0 (18 km/h). */
+    val minSpeed: Double? = null,
+    /** Minimum episode length in seconds; shorter handling is ignored. Default 5. */
+    val minEpisodeSec: Double? = null,
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        enabled?.let { put("enabled", it) }
+        minSpeed?.let { put("minSpeed", it) }
+        minEpisodeSec?.let { put("minEpisodeSec", it) }
+    }
+}
+
+/**
  * Mirrors `interface Config` in `react-native/src/types.ts` (the cross-SDK
  * source of truth for all four front-ends) property-for-property. Guarded
  * against drift by [ConfigDriftTest].
@@ -219,6 +240,8 @@ data class Config(
     val geofenceInitialTriggerEntry: Boolean? = null,
     /** On-device collision detection. Off by default. See [CrashDetectionConfig]. */
     val crashDetection: CrashDetectionConfig? = null,
+    /** On-device distracted-driving detection. Off by default. See [DistractionDetectionConfig]. */
+    val distractionDetection: DistractionDetectionConfig? = null,
 ) {
     /**
      * `setConfig` is a PATCH: this OMITS every `null` property so an
@@ -290,6 +313,7 @@ data class Config(
         maxMonitoredGeofences?.let { json.put("maxMonitoredGeofences", it) }
         geofenceInitialTriggerEntry?.let { json.put("geofenceInitialTriggerEntry", it) }
         crashDetection?.let { json.put("crashDetection", it.toJson()) }
+        distractionDetection?.let { json.put("distractionDetection", it.toJson()) }
 
         return json
     }

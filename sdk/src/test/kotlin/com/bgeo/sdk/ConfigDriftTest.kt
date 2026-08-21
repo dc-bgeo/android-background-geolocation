@@ -105,13 +105,14 @@ class ConfigDriftTest {
         maxMonitoredGeofences = -1,
         geofenceInitialTriggerEntry = true,
         crashDetection = CrashDetectionConfig(enabled = true, minSpeed = 11.11, impactThreshold = 4.0),
+        distractionDetection = DistractionDetectionConfig(enabled = true, minSpeed = 5.0, minEpisodeSec = 5.0),
     )
 
     @Test
     fun `Config covers exactly the keys types_ts declares`() {
         val expected = keysDeclaredInTypesTs()
         assertEquals("types.ts key count changed — update this expectation deliberately",
-            58, expected.size)
+            59, expected.size)
 
         val json = everyKeyPopulated().toJson()
         val actual = json.keys().asSequence().toSet()

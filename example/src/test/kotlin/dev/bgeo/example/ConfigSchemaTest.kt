@@ -77,6 +77,22 @@ class ConfigSchemaTest {
         assertEquals(4.0, ConfigSchema.defaultFor("crashDetection.impactThreshold"))
     }
 
+    @Test
+    fun `keysWithPrefix returns every distractionDetection field`() {
+        val keys = ConfigSchema.keysWithPrefix("distractionDetection.")
+        assertEquals(
+            setOf("distractionDetection.enabled", "distractionDetection.minSpeed", "distractionDetection.minEpisodeSec"),
+            keys.toSet(),
+        )
+    }
+
+    @Test
+    fun `distractionDetection defaults match types_ts (off, 5 m per s, 5 s)`() {
+        assertEquals(false, ConfigSchema.defaultFor("distractionDetection.enabled"))
+        assertEquals(5.0, ConfigSchema.defaultFor("distractionDetection.minSpeed"))
+        assertEquals(5.0, ConfigSchema.defaultFor("distractionDetection.minEpisodeSec"))
+    }
+
     // ---- ConfigCoerce.numberFromText: trap 7 (String.toDouble()/Double.toInt()
     // silently produce Infinity/NaN/saturated-Int instead of throwing) ----
 

@@ -279,6 +279,14 @@ object ConfigSchema {
             ),
         ),
         ConfigSection(
+            title = "Distraction detection",
+            fields = listOf(
+                ConfigField(key = "distractionDetection.enabled", label = "Distraction detection", type = ConfigFieldType.BOOL, default = false),
+                ConfigField(key = "distractionDetection.minSpeed", label = "Distraction min speed", type = ConfigFieldType.NUMBER, default = 5.0, unit = "m/s"),
+                ConfigField(key = "distractionDetection.minEpisodeSec", label = "Distraction min episode", type = ConfigFieldType.NUMBER, default = 5.0, unit = "s"),
+            ),
+        ),
+        ConfigSection(
             title = "Application",
             fields = listOf(
                 // BGGeoEngine.kt:1077 — `?: 60.0`.

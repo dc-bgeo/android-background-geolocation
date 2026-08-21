@@ -3,6 +3,7 @@ package dev.bgeo.example
 import com.bgeo.sdk.BackgroundGeolocation
 import com.bgeo.sdk.Config
 import com.bgeo.sdk.CrashDetectionConfig
+import com.bgeo.sdk.DistractionDetectionConfig
 import com.bgeo.sdk.NotificationConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -129,12 +130,13 @@ class ConfigStore(
     fun merged(into: Config): Config {
         var config = into
         for ((key, value) in _overrides.value) {
-            if (key.startsWith(NOTIFICATION_PREFIX) || key.startsWith(CRASH_DETECTION_PREFIX)) continue
+            if (key.startsWith(NOTIFICATION_PREFIX) || key.startsWith(CRASH_DETECTION_PREFIX) || key.startsWith(DISTRACTION_DETECTION_PREFIX)) continue
             config = applyKeyToPatch(key, value, config)
         }
         return config.copy(
             notification = overlayNotification(config.notification),
             crashDetection = overlayCrashDetection(config.crashDetection),
+            distractionDetection = overlayDistractionDetection(config.distractionDetection),
         )
     }
 
@@ -158,6 +160,8 @@ class ConfigStore(
             Config(notification = fullNotificationPatch(candidateOverrides))
         } else if (key.startsWith(CRASH_DETECTION_PREFIX)) {
             Config(crashDetection = fullCrashDetectionPatch(candidateOverrides))
+        } else if (key.startsWith(DISTRACTION_DETECTION_PREFIX)) {
+            Config(distractionDetection = fullDistractionDetectionPatch(candidateOverrides))
         } else {
             applyKeyToPatch(key, candidateOverrides.getValue(key), Config())
         }
@@ -166,6 +170,7 @@ class ConfigStore(
         var patch = Config()
         var rebuiltNotification = false
         var rebuiltCrashDetection = false
+        var rebuiltDistractionDetection = false
         for (key in keys) {
             if (key.startsWith(NOTIFICATION_PREFIX)) {
                 if (rebuiltNotification) continue
@@ -175,6 +180,10 @@ class ConfigStore(
                 if (rebuiltCrashDetection) continue
                 rebuiltCrashDetection = true
                 patch = patch.copy(crashDetection = fullCrashDetectionPatch(emptyMap()))
+            } else if (key.startsWith(DISTRACTION_DETECTION_PREFIX)) {
+                if (rebuiltDistractionDetection) continue
+                rebuiltDistractionDetection = true
+                patch = patch.copy(distractionDetection = fullDistractionDetectionPatch(emptyMap()))
             } else {
                 val default = ConfigSchema.defaultFor(key) ?: continue
                 patch = applyKeyToPatch(key, default, patch)
@@ -243,6 +252,34 @@ class ConfigStore(
         else -> crashDetection
     }
 
+    /** [merged]'s distractionDetection handling: only touches dot-keys this store actually has an override for. */
+    private fun overlayDistractionDetection(base: DistractionDetectionConfig?): DistractionDetectionConfig? {
+        val overriddenKeys = ConfigSchema.keysWithPrefix(DISTRACTION_DETECTION_PREFIX).filter { _overrides.value.containsKey(it) }
+        if (overriddenKeys.isEmpty()) return base
+        var distractionDetection = base ?: DistractionDetectionConfig()
+        for (key in overriddenKeys) {
+            distractionDetection = assignDistractionDetectionField(key.removePrefix(DISTRACTION_DETECTION_PREFIX), _overrides.value.getValue(key), distractionDetection)
+        }
+        return distractionDetection
+    }
+
+    /** Live-push/reset's distractionDetection handling: rebuilds EVERY field from `source` (override if present, else the schema default). */
+    private fun fullDistractionDetectionPatch(source: Map<String, Any>): DistractionDetectionConfig {
+        var distractionDetection = DistractionDetectionConfig()
+        for (key in ConfigSchema.keysWithPrefix(DISTRACTION_DETECTION_PREFIX)) {
+            val raw = source[key] ?: ConfigSchema.defaultFor(key) ?: continue
+            distractionDetection = assignDistractionDetectionField(key.removePrefix(DISTRACTION_DETECTION_PREFIX), raw, distractionDetection)
+        }
+        return distractionDetection
+    }
+
+    private fun assignDistractionDetectionField(sub: String, raw: Any, distractionDetection: DistractionDetectionConfig): DistractionDetectionConfig = when (sub) {
+        "enabled" -> ConfigCoerce.bool(raw)?.let { distractionDetection.copy(enabled = it) } ?: distractionDetection
+        "minSpeed" -> ConfigCoerce.double(raw)?.let { distractionDetection.copy(minSpeed = it) } ?: distractionDetection
+        "minEpisodeSec" -> ConfigCoerce.double(raw)?.let { distractionDetection.copy(minEpisodeSec = it) } ?: distractionDetection
+        else -> distractionDetection
+    }
+
     // ---- key -> Config property --------------------------------------
     //
     // Only writes the property when coercion succeeds — a type-mismatched
@@ -302,7 +339,7 @@ class ConfigStore(
             "logLevel" -> i()?.let { patch.copy(logLevel = it) } ?: patch
             "logMaxDays" -> i()?.let { patch.copy(logMaxDays = it) } ?: patch
             "diagnosticExtras" -> b()?.let { patch.copy(diagnosticExtras = it) } ?: patch
-            else -> patch // notification.*/crashDetection.* are handled by the caller; unknown keys are ignored.
+            else -> patch // notification.*/crashDetection.*/distractionDetection.* are handled by the caller; unknown keys are ignored.
         }
     }
 
@@ -310,5 +347,6 @@ class ConfigStore(
         private const val STORAGE_KEY = "bgeo:configOverrides"
         private const val NOTIFICATION_PREFIX = "notification."
         private const val CRASH_DETECTION_PREFIX = "crashDetection."
+        private const val DISTRACTION_DETECTION_PREFIX = "distractionDetection."
     }
 }
