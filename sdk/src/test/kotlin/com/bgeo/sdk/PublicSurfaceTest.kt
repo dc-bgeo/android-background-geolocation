@@ -456,6 +456,29 @@ class PublicSurfaceTest {
     }
 
     @Test
+    fun `DistractionEvent constructs and every property reads back`() {
+        val location = Location(
+            "u", "t", null, 0.0,
+            Coords(0.0, 0.0, 0.0, null, null, null, null, null, null, null),
+            MotionActivity(ActivityType.STILL, 100),
+            Battery(1.0, false),
+            false, null, null, null,
+        )
+        val event = DistractionEvent(
+            timestamp = "2026-08-21T10:00:00.000Z",
+            startTimestamp = "2026-08-21T09:59:50.000Z",
+            durationSec = 10.0,
+            cause = "s",
+            location = location,
+        )
+        assertEquals("2026-08-21T10:00:00.000Z", event.timestamp)
+        assertEquals("2026-08-21T09:59:50.000Z", event.startTimestamp)
+        assertEquals(10.0, event.durationSec, 0.0)
+        assertEquals("s", event.cause)
+        assertSame(location, event.location)
+    }
+
+    @Test
     fun `HeadingEvent constructs and every property reads back`() {
         val event = HeadingEvent(
             heading = 91.5,

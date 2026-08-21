@@ -296,6 +296,38 @@ data class CrashEvent(
 }
 
 /**
+ * On-device distracted-driving episode - see [Config.distractionDetection].
+ *
+ * The `dds`/`ddc`/`ddd` closing keys ride every record built between the
+ * episode closing and the first record that is actually persisted, so a
+ * `sample: true` one-shot and the inline `location` embedded in this very
+ * event can each carry the closing keys more than once. The uploaded-record
+ * contract is unaffected, but don't count episodes off the location stream -
+ * this [DistractionEvent] fires exactly once per episode and is the thing to
+ * count.
+ */
+data class DistractionEvent(
+    val timestamp: String,
+    val startTimestamp: String,
+    val durationSec: Double,
+    val cause: String,
+    val location: Location?,
+) {
+    companion object {
+        fun from(json: JSONObject): DistractionEvent? {
+            val timestamp = json.stringOrNull("timestamp") ?: return null
+            val startTimestamp = json.stringOrNull("startTimestamp") ?: return null
+            val durationSec = json.doubleOrNull("durationSec") ?: return null
+            val cause = json.stringOrNull("cause") ?: return null
+            // `location` may be null - the engine can't always attach a fix to
+            // the episode's close instant (e.g. no recent fix within tolerance).
+            val location = json.objectOrNull("location")?.let { Location.from(it) }
+            return DistractionEvent(timestamp, startTimestamp, durationSec, cause, location)
+        }
+    }
+}
+
+/**
  * One admitted compass sample — see [BackgroundGeolocation.watchHeading],
  * which is what arms the feed emitting these.
  *

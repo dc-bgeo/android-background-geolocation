@@ -132,6 +132,22 @@ class ModelDecodingTest {
     }
 
     @Test
+    fun `distraction event accepts JSONObject NULL location`() {
+        val json = JSONObject()
+            .put("timestamp", "2026-08-21T10:00:00.000Z")
+            .put("startTimestamp", "2026-08-21T09:59:50.000Z")
+            .put("durationSec", 10.0)
+            .put("cause", "s")
+            .put("location", JSONObject.NULL)
+        val event = DistractionEvent.from(json)
+        assertNotNull(event)
+        assertEquals("2026-08-21T09:59:50.000Z", event!!.startTimestamp)
+        assertEquals(10.0, event.durationSec, 0.0001)
+        assertEquals("s", event.cause)
+        assertNull(event.location)
+    }
+
+    @Test
     fun `heading event decodes the wire shape`() {
         val json = JSONObject()
             .put("heading", 91.5)

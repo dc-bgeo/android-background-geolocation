@@ -277,6 +277,12 @@ object BackgroundGeolocation {
     val crashEvents: Flow<CrashEvent> get() = hub.flow("crash").mapNotNull(CrashEvent::from)
 
     /**
+     * Distracted-driving detection. Only armed while moving, and off by
+     * default (`distractionDetection.enabled`) - see [Config.distractionDetection].
+     */
+    val distractionEvents: Flow<DistractionEvent> get() = hub.flow("distraction").mapNotNull(DistractionEvent::from)
+
+    /**
      * Compass samples. Silent until [watchHeading] arms the feed, silent again
      * after [stop], which tears it down (re-arm with [watchHeading]) — and
      * silent for as long as the app is BACKGROUNDED, which is by design: the
@@ -324,6 +330,10 @@ object BackgroundGeolocation {
     /** Callback-style twin of [crashEvents]. */
     fun onCrash(handler: (CrashEvent) -> Unit): Subscription =
         hub.subscribe("crash") { json -> CrashEvent.from(json)?.let(handler) }
+
+    /** Callback-style twin of [distractionEvents]. */
+    fun onDistraction(handler: (DistractionEvent) -> Unit): Subscription =
+        hub.subscribe("distraction") { json -> DistractionEvent.from(json)?.let(handler) }
 
     /**
      * Callback-style twin of [headingEvents] — including its silences: no
