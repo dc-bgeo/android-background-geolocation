@@ -49,11 +49,11 @@
         {
           "name": "bgeo-android-0.15.0.aar",
           "url": "bgeo-android-0.15.0.aar",
-          "size": 355017,
-          "sha512": "17cff12445798acfa094807bfe08c33ba8e7a06c2b4ff99a782a2c7751cc70d698b49f5af47de262bfa4326a461172ab4ee0a109b891bd0420b5c48b3d74ca2d",
-          "sha256": "979f489e05c34e435153c81694014c2218f0d9502f906bbc83459cf9e6b2e9bb",
-          "sha1": "b5b880461ba5fab2a2906965049edaf0b08bff82",
-          "md5": "4a5dfd22cdc50e2b1b0f25b6bd416138"
+          "size": 355018,
+          "sha512": "c1bcadceb4888afd8211b30adfbfe46933845c0ef1072d660c6eaec5f49b98259fa041415ba0304c95d87eaddaa7c15983f7808f5ae4ce0bccd446b68ede7ca9",
+          "sha256": "0f04cd6927f613d7387f8751166b32dbcdb20fb698cefe5883106692a1605428",
+          "sha1": "a490f7d3b2c6bb4c3352686809b8e37c610ce430",
+          "md5": "c5f7841c2c6572051b60bca8a84e7f8f"
         }
       ]
     },
@@ -99,11 +99,11 @@
         {
           "name": "bgeo-android-0.15.0.aar",
           "url": "bgeo-android-0.15.0.aar",
-          "size": 355017,
-          "sha512": "17cff12445798acfa094807bfe08c33ba8e7a06c2b4ff99a782a2c7751cc70d698b49f5af47de262bfa4326a461172ab4ee0a109b891bd0420b5c48b3d74ca2d",
-          "sha256": "979f489e05c34e435153c81694014c2218f0d9502f906bbc83459cf9e6b2e9bb",
-          "sha1": "b5b880461ba5fab2a2906965049edaf0b08bff82",
-          "md5": "4a5dfd22cdc50e2b1b0f25b6bd416138"
+          "size": 355018,
+          "sha512": "c1bcadceb4888afd8211b30adfbfe46933845c0ef1072d660c6eaec5f49b98259fa041415ba0304c95d87eaddaa7c15983f7808f5ae4ce0bccd446b68ede7ca9",
+          "sha256": "0f04cd6927f613d7387f8751166b32dbcdb20fb698cefe5883106692a1605428",
+          "sha1": "a490f7d3b2c6bb4c3352686809b8e37c610ce430",
+          "md5": "c5f7841c2c6572051b60bca8a84e7f8f"
         }
       ]
     }
