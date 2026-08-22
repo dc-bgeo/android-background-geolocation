@@ -303,8 +303,11 @@ data class CrashEvent(
  * `sample: true` one-shot and the inline `location` embedded in this very
  * event can each carry the closing keys more than once. The uploaded-record
  * contract is unaffected, but don't count episodes off the location stream -
- * this [DistractionEvent] fires exactly once per episode and is the thing to
- * count.
+ * count from this [DistractionEvent] instead. It fires once per episode in
+ * normal operation; a rare disarm race can still publish a second event for
+ * the same episode (same `dds`/`startTimestamp`, different
+ * `durationSec`/`ddd`), so an exact count should dedupe by `startTimestamp`
+ * (equivalently `dds`).
  */
 data class DistractionEvent(
     val timestamp: String,
