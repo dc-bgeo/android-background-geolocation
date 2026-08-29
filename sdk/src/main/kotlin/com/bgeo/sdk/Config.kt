@@ -171,6 +171,15 @@ data class Config(
     /** @platform ios Show the blue background-location pill under Always auth. false + Always also skips the session engine's CLBackgroundActivitySession to hide the pill (beta — needs field tests). No-op on Android. */
     val showsBackgroundLocationIndicator: Boolean? = null,
     val stationaryRadius: Double? = null,
+    /** @platform ios Satellites in the stationary wake ring (entry-monitored regions
+     * around the parked anchor). 0 disables. Default 8. Each one takes a slot from
+     * the 20-region iOS budget shared with app geofences (app geofences capped at
+     * 19 − wakeRegionRingCount). Counts 1–7 leave directional gaps; use 0 or ≥ 8.
+     * No-op on Android. */
+    val wakeRegionRingCount: Int? = null,
+    /** @platform ios Distance from the anchor to each satellite center, metres.
+     * Default 2 × stationaryRadius (also the floor). No-op on Android. */
+    val wakeRegionRingDistance: Double? = null,
     /** @platform ios Low-power continuous wake distance; independent of the larger region radius. No-op on Android. */
     val stationaryDistanceFilter: Double? = null,
     /** @platform ios Hold a background task while backgrounded+stationary. No-op on Android. */
@@ -219,6 +228,18 @@ data class Config(
     /** Keep a low-power location request alive while stationary (fast wake source
      * on trip start). Default true; false restores fully-sleep-GPS (slower wake). */
     val stationaryKeepAlive: Boolean? = null,
+    /** Drop the foreground service while parked and take periodic fixes from a
+     * Doze-proof alarm instead. Movement re-arms via activity recognition or the
+     * stationary geofence, so trip starts wake tens of seconds to minutes later.
+     * Keep motionTriggerDelay at 0 with this on. Default false. */
+    val dormantOnStationary: Boolean? = null,
+    /** Seconds between dormant wakes. Doze floors alarms at ~9-15 min per app.
+     * Default 1800. */
+    val dormantWakeInterval: Int? = null,
+    /** Seconds to keep the low-power stationary stream after a park before
+     * dropping the foreground service (dormantOnStationary). 0 = immediate.
+     * Default 120. */
+    val dormantGrace: Int? = null,
     /** Upload a compact native diagnostic snapshot in every point's `extras`
      * (counters, app/motion state, manager config) — test devices only. */
     val diagnosticExtras: Boolean? = null,
@@ -276,6 +297,8 @@ data class Config(
         stopTimeout?.let { json.put("stopTimeout", it) }
         showsBackgroundLocationIndicator?.let { json.put("showsBackgroundLocationIndicator", it) }
         stationaryRadius?.let { json.put("stationaryRadius", it) }
+        wakeRegionRingCount?.let { json.put("wakeRegionRingCount", it) }
+        wakeRegionRingDistance?.let { json.put("wakeRegionRingDistance", it) }
         stationaryDistanceFilter?.let { json.put("stationaryDistanceFilter", it) }
         preventSuspend?.let { json.put("preventSuspend", it) }
         heartbeatInterval?.let { json.put("heartbeatInterval", it) }
@@ -307,6 +330,9 @@ data class Config(
             json.put("authorization", if (it.strategy == CLEAR_STRING) JSONObject.NULL else it.toJson())
         }
         stationaryKeepAlive?.let { json.put("stationaryKeepAlive", it) }
+        dormantOnStationary?.let { json.put("dormantOnStationary", it) }
+        dormantWakeInterval?.let { json.put("dormantWakeInterval", it) }
+        dormantGrace?.let { json.put("dormantGrace", it) }
         diagnosticExtras?.let { json.put("diagnosticExtras", it) }
         useSessionEngine?.let { json.put("useSessionEngine", it) }
         geofenceProximityRadius?.let { json.put("geofenceProximityRadius", it) }
