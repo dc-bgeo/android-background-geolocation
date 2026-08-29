@@ -180,6 +180,10 @@ data class Config(
     /** @platform ios Distance from the anchor to each satellite center, metres.
      * Default 2 × stationaryRadius (also the floor). No-op on Android. */
     val wakeRegionRingDistance: Double? = null,
+    /** @platform ios Experimental. Lay a chain of entry-monitored wake regions ahead along the course while moving, so a swipe-killed (never-in-use) process is woken by each crossing instead of only by the 5-min-throttled significant-change service. Default false. No-op on Android. */
+    val wakeTrailEnabled: Boolean? = null,
+    /** @platform ios Experimental. Regions in the wake trail (spaced 200 m, radius 100 m). Default 8, cap 18, 0 disables. Shares the reserved slots with the wake ring: app geofences are capped at 19 − max(wakeRegionRingCount, wakeTrailCount). No-op on Android. */
+    val wakeTrailCount: Int? = null,
     /** @platform ios Low-power continuous wake distance; independent of the larger region radius. No-op on Android. */
     val stationaryDistanceFilter: Double? = null,
     /** @platform ios Hold a background task while backgrounded+stationary. No-op on Android. */
@@ -299,6 +303,8 @@ data class Config(
         stationaryRadius?.let { json.put("stationaryRadius", it) }
         wakeRegionRingCount?.let { json.put("wakeRegionRingCount", it) }
         wakeRegionRingDistance?.let { json.put("wakeRegionRingDistance", it) }
+        wakeTrailEnabled?.let { json.put("wakeTrailEnabled", it) }
+        wakeTrailCount?.let { json.put("wakeTrailCount", it) }
         stationaryDistanceFilter?.let { json.put("stationaryDistanceFilter", it) }
         preventSuspend?.let { json.put("preventSuspend", it) }
         heartbeatInterval?.let { json.put("heartbeatInterval", it) }

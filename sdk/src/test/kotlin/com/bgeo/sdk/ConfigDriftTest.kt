@@ -36,7 +36,7 @@ class ConfigDriftTest {
     }
 
     /**
-     * Every one of the 64 [Config] properties set to a concrete value.
+     * Every one of the 66 [Config] properties set to a concrete value.
      * Enumerated explicitly, in `types.ts` declaration order — a fixture
      * that only set 50 keys would let the other 7 vanish from this test
      * without failing it.
@@ -67,6 +67,8 @@ class ConfigDriftTest {
         stationaryRadius = 25.0,
         wakeRegionRingCount = 8,
         wakeRegionRingDistance = 400.0,
+        wakeTrailEnabled = false,
+        wakeTrailCount = 8,
         stationaryDistanceFilter = 25.0,
         preventSuspend = false,
         heartbeatInterval = 60,
@@ -117,7 +119,7 @@ class ConfigDriftTest {
     fun `Config covers exactly the keys types_ts declares`() {
         val expected = keysDeclaredInTypesTs()
         assertEquals("types.ts key count changed — update this expectation deliberately",
-            64, expected.size)
+            66, expected.size)
 
         val json = everyKeyPopulated().toJson()
         val actual = json.keys().asSequence().toSet()
