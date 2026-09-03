@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "dev.bgeo"
-version = "0.2.1"
+version = "0.2.2"
 
 /** Public repository — POM `url`/`scm` and the licence links all point here. */
 val PROJECT_URL = "https://github.com/dc-bgeo/android-background-geolocation"
@@ -140,7 +140,7 @@ afterEvaluate {
 dependencies {
     // api: the engine's types appear in this facade's own surface, and consumers
     // must resolve it transitively.
-    api("dev.bgeo:bgeo-android:0.16.9")
+    api("dev.bgeo:bgeo-android:0.16.10")
     // api, not implementation: Flow appears in this facade's own public
     // surface (BackgroundGeolocation.locations and its seven siblings,
     // Geofences.kt's geofenceEvents/geofenceChanges) - implementation would
