@@ -140,7 +140,7 @@ afterEvaluate {
 dependencies {
     // api: the engine's types appear in this facade's own surface, and consumers
     // must resolve it transitively.
-    api("dev.bgeo:bgeo-android:0.16.10")
+    api("dev.bgeo:bgeo-android:0.16.11")
     // api, not implementation: Flow appears in this facade's own public
     // surface (BackgroundGeolocation.locations and its seven siblings,
     // Geofences.kt's geofenceEvents/geofenceChanges) - implementation would
