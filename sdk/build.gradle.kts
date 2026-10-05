@@ -6,7 +6,7 @@ plugins {
 }
 
 group = "dev.bgeo"
-version = "0.2.3"
+version = "0.3.0"
 
 /** Public repository — POM `url`/`scm` and the licence links all point here. */
 val PROJECT_URL = "https://github.com/dc-bgeo/android-background-geolocation"
