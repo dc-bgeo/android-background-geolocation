@@ -561,6 +561,7 @@ class PublicSurfaceTest {
 
     // ---- exceptions (BGeoException.kt) -------------------------------------
 
+    @Suppress("DEPRECATION") // the LICENSE_* subclasses stay for source compatibility
     @Test
     fun `every BGeoException subclass constructs and exposes its code and message`() {
         assertEquals("LICENSE_MISSING", BGeoException.LicenseMissing("m").code)

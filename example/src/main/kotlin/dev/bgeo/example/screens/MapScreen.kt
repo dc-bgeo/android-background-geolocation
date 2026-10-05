@@ -40,9 +40,8 @@ package dev.bgeo.example.screens
 // while driving. `applyTrackDots` now adds/removes only what changed and
 // shares one icon instance; `applyLastMarker` moves a single marker.
 //
-// **Range and paging.** The from/to history range ([RangeBar]) reads the
-// same hybrid source as the other consoles (`History.load` -> server history
-// when linked, the local buffer otherwise), and the DRAWN track is windowed
+// **Range and paging.** The from/to history range ([RangeBar]) filters the
+// local session buffer (`History.filterPointsByRange`), and the DRAWN track is windowed
 // to `MapPaging.PAGE_SIZE` points behind a [Pager] — both live and range
 // tracks, exactly as RN/iOS/Flutter do. The window, not the whole list, is
 // what reaches the map; the coordinates sheet still lists everything.
@@ -76,7 +75,6 @@ import androidx.compose.material.icons.filled.Satellite
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -112,7 +110,6 @@ import com.bgeo.sdk.CurrentPositionOptions
 import com.bgeo.sdk.Geofence
 import com.bgeo.sdk.PermissionRequester
 import dev.bgeo.example.AppStore
-import dev.bgeo.example.DeviceLink
 import dev.bgeo.example.History
 import dev.bgeo.example.LogLevel
 import dev.bgeo.example.LogUploader
@@ -162,14 +159,12 @@ private const val DEFAULT_LNG = 13.405
 fun MapScreen(
     appStore: AppStore,
     logUploader: LogUploader,
-    deviceLink: DeviceLink,
     permissionRequester: PermissionRequester,
     onGeofenceRequest: (GeofenceRequest) -> Unit = {},
 ) {
     val points by appStore.points.collectAsState()
     val geofences by appStore.geofences.collectAsState()
     val status by appStore.status.collectAsState()
-    val link by appStore.link.collectAsState()
 
     // `rememberSaveable`, not `remember`: `ExampleScaffold` composes only the
     // selected tab, so a trip to Logs and back tears this screen down — every
@@ -181,7 +176,7 @@ fun MapScreen(
     var showGeofences by rememberSaveable { mutableStateOf(true) }
     var panelOpen by rememberSaveable { mutableStateOf(true) }
 
-    // From/to history range (`History.load`'s only consumer, same as
+    // From/to history range (`History.filterPointsByRange`'s only consumer, same as
     // `MapScreen.tsx`/`.swift`): while `historyPoints` is non-null the screen
     // draws that range instead of the live buffer, and Follow stays off.
     var fromMillis by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -193,7 +188,6 @@ fun MapScreen(
     // tap — the data is never the thing worth risking a
     // TransactionTooLargeException for.
     var historyPoints by remember { mutableStateOf<List<Point>?>(null) }
-    var loadingRange by remember { mutableStateOf(false) }
     val rangeActive = historyPoints != null
     val displayPoints = historyPoints ?: points
 
@@ -212,7 +206,7 @@ fun MapScreen(
 
     // Through `LogUploader`, not `appStore.appendLog` directly: that is what
     // also persists the line to the SDK's own log queue (surviving app kills)
-    // and uploads it to `/device/logs` once linked — and what applies the
+    // — and what applies the
     // credential scrub to every line by construction.
     fun log(event: String, message: String, level: LogLevel) {
         logUploader.logEvent(event, level, message)
@@ -260,33 +254,26 @@ fun MapScreen(
     }
 
     /**
-     * `MapScreen.tsx`'s `applyRange`: load the range (server history when
-     * linked, the local buffer otherwise — [History.load] decides), stop
-     * following live, and frame what was loaded. A range that comes back
+     * `MapScreen.tsx`'s `applyRange`: filter the local buffer to the range,
+     * stop following live, and frame what was loaded. A range that comes back
      * empty still takes effect, exactly like the reference clients: the map
      * goes blank, which IS the answer for "no points in that window", rather
      * than silently leaving the live track on screen.
      */
     fun applyRange() {
         if (fromMillis == null && toMillis == null) return
-        loadingRange = true
         follow = false
-        scope.launch {
-            val loaded = History.load(
-                deviceLink = deviceLink,
-                linked = link.linked,
-                localPoints = points,
-                from = fromMillis?.let(History::isoUtc),
-                to = toMillis?.let(History::isoUtc),
-            )
-            historyPoints = loaded
-            loadingRange = false
-            page = 0
-            log("history", "range loaded: ${loaded.size} points", LogLevel.INFO)
-            // Frame the newest window of the range — that is what the map will
-            // draw, not the whole range.
-            fitCamera(mapViewRef, loaded.takeLast(MapPaging.PAGE_SIZE))
-        }
+        val loaded = History.filterPointsByRange(
+            points,
+            from = fromMillis?.let(History::isoUtc),
+            to = toMillis?.let(History::isoUtc),
+        )
+        historyPoints = loaded
+        page = 0
+        log("history", "range loaded: ${loaded.size} points", LogLevel.INFO)
+        // Frame the newest window of the range — that is what the map will
+        // draw, not the whole range.
+        fitCamera(mapViewRef, loaded.takeLast(MapPaging.PAGE_SIZE))
     }
 
     fun resetRange() {
@@ -335,7 +322,7 @@ fun MapScreen(
                 .fillMaxWidth()
                 .padding(10.dp),
         ) {
-            StatusRow(linked = link.linked, deviceId = link.deviceId, isMoving = status.isMoving, batteryLevel = status.batteryLevel, pointCount = displayPoints.size, rangeActive = rangeActive)
+            StatusRow(isMoving = status.isMoving, batteryLevel = status.batteryLevel, pointCount = displayPoints.size, rangeActive = rangeActive)
             Spacer(Modifier.height(8.dp))
             ControlCard(
                 enabled = status.enabled,
@@ -355,7 +342,6 @@ fun MapScreen(
                 onPickFrom = { fromMillis = it },
                 toMillis = toMillis,
                 onPickTo = { toMillis = it },
-                loadingRange = loadingRange,
                 rangeActive = rangeActive,
                 onApplyRange = ::applyRange,
                 onResetRange = ::resetRange,
@@ -440,8 +426,6 @@ private fun Pager(
 
 @Composable
 private fun StatusRow(
-    linked: Boolean,
-    deviceId: String?,
     isMoving: Boolean,
     batteryLevel: Double?,
     pointCount: Int,
@@ -449,13 +433,8 @@ private fun StatusRow(
 ) {
     Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 2.dp) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(if (linked) "linked" else "not linked", style = MaterialTheme.typography.labelLarge)
-            if (linked && deviceId != null) {
-                Spacer(Modifier.width(8.dp))
-                Text(deviceId.take(8), style = MaterialTheme.typography.labelSmall)
-            }
+            Text(if (isMoving) "● moving" else "● stationary", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.weight(1f))
-            Text(if (isMoving) "● moving" else "● stationary", style = MaterialTheme.typography.labelMedium)
             // `>= 0`, not just non-null: an unknown battery level arrives as
             // -1 from the engine and would render as "-100%" (the same guard
             // the iOS console needed).
@@ -490,7 +469,6 @@ private fun ControlCard(
     onPickFrom: (Long?) -> Unit,
     toMillis: Long?,
     onPickTo: (Long?) -> Unit,
-    loadingRange: Boolean,
     rangeActive: Boolean,
     onApplyRange: () -> Unit,
     onResetRange: () -> Unit,
@@ -531,7 +509,6 @@ private fun ControlCard(
                     onPickFrom = onPickFrom,
                     toMillis = toMillis,
                     onPickTo = onPickTo,
-                    loading = loadingRange,
                     rangeActive = rangeActive,
                     onApply = onApplyRange,
                     onReset = onResetRange,
@@ -543,8 +520,7 @@ private fun ControlCard(
 
 /**
  * The from/to history range bar — the last piece of `MapScreen.tsx`'s control
- * panel this console was missing (`History.load` shipped with no caller; see
- * that file's header, which this change makes obsolete).
+ * panel this console was missing.
  *
  * Two rows, not one: a picked date reads as "07-30 18:42", and two of those
  * plus Apply plus Live do not fit a phone width side by side — the row that
@@ -557,7 +533,6 @@ private fun RangeBar(
     onPickFrom: (Long?) -> Unit,
     toMillis: Long?,
     onPickTo: (Long?) -> Unit,
-    loading: Boolean,
     rangeActive: Boolean,
     onApply: () -> Unit,
     onReset: () -> Unit,
@@ -599,14 +574,10 @@ private fun RangeBar(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Button(
                 onClick = onApply,
-                enabled = !loading && (fromMillis != null || toMillis != null),
+                enabled = (fromMillis != null || toMillis != null),
                 contentPadding = PaddingValues(horizontal = 16.dp),
             ) {
                 Text("Apply")
-            }
-            if (loading) {
-                Spacer(Modifier.width(8.dp))
-                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
             }
             if (rangeActive) {
                 Spacer(Modifier.width(8.dp))

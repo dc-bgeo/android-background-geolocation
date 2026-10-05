@@ -2,7 +2,6 @@ package dev.bgeo.example
 
 import com.bgeo.sdk.Geofence
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -101,30 +100,6 @@ class AppStoreTest {
 
         store.setGeofences(listOf(b))
         assertEquals(listOf(b), store.geofences.value)
-    }
-
-    @Test
-    fun `setLink applies partial updates without touching other fields`() {
-        val store = AppStore()
-
-        store.setLink(deviceId = "device-1")
-        assertEquals(LinkState(serverUrl = "https://app.bgeo.dev", linked = false, deviceId = "device-1"), store.link.value)
-
-        store.setLink(linked = true)
-        assertEquals(LinkState(serverUrl = "https://app.bgeo.dev", linked = true, deviceId = "device-1"), store.link.value)
-
-        store.setLink(serverUrl = "https://custom.example")
-        assertEquals(LinkState("https://custom.example", true, "device-1"), store.link.value)
-    }
-
-    @Test
-    fun `setLink clearDeviceId explicitly nulls the device id, unlike an omitted deviceId`() {
-        val store = AppStore()
-        store.setLink(deviceId = "device-1")
-
-        store.setLink(clearDeviceId = true)
-
-        assertNull(store.link.value.deviceId)
     }
 
     @Test

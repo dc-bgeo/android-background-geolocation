@@ -101,34 +101,25 @@ object BackgroundGeolocation {
 
     // ---- lifecycle ------------------------------------------------------
 
-    /**
-     * Applies [config] FIRST, then checks the licence — the engine reads the
-     * licence key out of the config it was just handed, so a bad licence
-     * still leaves [config] applied (`BackgroundGeolocationModule.kt:109-123`).
-     */
+    /** Applies [config] and returns state (`BackgroundGeolocationModule.kt:109-123`). */
     suspend fun ready(config: Config): State {
         engine.applyConfig(config.toJson())
-        engine.licenseErrorCode()?.let { throw licenseError(it) }
         return currentState()
     }
 
-    /**
-     * Applies [config] and returns state. Unlike [ready]/[start], this never
-     * consults the licence (`BackgroundGeolocationModule.kt:125-128`).
-     */
+    /** Applies [config] (a PATCH, see [Config]) and returns state (`BackgroundGeolocationModule.kt:125-128`). */
     suspend fun setConfig(config: Config): State {
         engine.applyConfig(config.toJson())
         return currentState()
     }
 
-    /** Checks the licence BEFORE starting tracking (`BackgroundGeolocationModule.kt:130-137`). */
+    /** Starts tracking (`BackgroundGeolocationModule.kt:130-137`). */
     suspend fun start(): State {
-        engine.licenseErrorCode()?.let { throw licenseError(it) }
         engine.startTracking()
         return currentState()
     }
 
-    /** Never consults the licence (`BackgroundGeolocationModule.kt:139-142`). */
+    /** Stops tracking (`BackgroundGeolocationModule.kt:139-142`). */
     suspend fun stop(): State {
         engine.stopTracking()
         return currentState()
@@ -293,9 +284,8 @@ object BackgroundGeolocation {
     val headingEvents: Flow<HeadingEvent> get() = hub.flow("heading").mapNotNull(HeadingEvent::from)
 
     /**
-     * Every `locationerror` the engine emits — a failing [watchPosition] tick,
-     * or [watchPosition] itself called on an unlicensed build (both sites
-     * short-circuit with this event, no callback and no throw). Without a
+     * Every `locationerror` the engine emits — a failing [watchPosition] tick
+     * short-circuits with this event, no callback and no throw. Without a
      * subscriber here, a failing watch fails in total silence.
      */
     val locationErrors: Flow<BGeoException> get() = hub.flow("locationerror").mapNotNull(BGeoException::fromLocationErrorEvent)
@@ -361,9 +351,6 @@ object BackgroundGeolocation {
     }
 
     // ---- private helpers ----------------------------------------------------
-
-    private fun licenseError(code: String): BGeoException =
-        BGeoException.from(code, "BGeo license check failed ($code)")
 
     private fun currentState(): State = State.from(engine.stateMap())
 

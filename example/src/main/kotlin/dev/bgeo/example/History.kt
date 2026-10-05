@@ -1,7 +1,5 @@
 package dev.bgeo.example
 
-import org.json.JSONObject
-import java.net.URLEncoder
 import java.text.ParseException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -9,9 +7,8 @@ import java.util.Locale
 import java.util.TimeZone
 
 /**
- * Hybrid history source for the Map screen's from/to range: server history
- * when the device is linked (same data the web console shows), otherwise the
- * local session buffer filtered by timestamp.
+ * History source for the Map screen's from/to range: the local session
+ * buffer filtered by timestamp.
  *
  * A Kotlin port of `react-native/example/src/history.ts`;
  * `ios/Example/Sources/History.swift` is the same port for iOS. Deliberately
@@ -42,112 +39,20 @@ object History {
     }
 
     /**
-     * `history.ts`'s `serverLocationToPoint` — the console's `/v1` +
-     * `/device` history camelCase shape -> [Point]. Unlike the RN original
-     * (which never drops a row), returns `null` when a required field
-     * (`recordedAt`/`lat`/`lng`) is missing or the wrong type, matching this
-     * codebase's `Models.kt` decoding convention and iOS's
-     * `HistoryLoader.point(fromServerJSON:)`. `geofence` is deliberately not
-     * decoded: server history doesn't carry per-point geofence detail today
-     * (same note as the iOS port).
-     */
-    fun pointFromServerJson(json: JSONObject): Point? {
-        val timestamp = json.stringOrNull("recordedAt") ?: return null
-        val latitude = json.doubleOrNull("lat") ?: return null
-        val longitude = json.doubleOrNull("lng") ?: return null
-        return Point(
-            uuid = json.stringOrNull("uuid"),
-            latitude = latitude,
-            longitude = longitude,
-            timestamp = timestamp,
-            accuracy = json.doubleOrNull("accuracy"),
-            speed = json.doubleOrNull("speed"),
-            heading = json.doubleOrNull("heading"),
-            odometer = json.doubleOrNull("odometer"),
-            activity = json.stringOrNull("activityType") ?: json.stringOrNull("activity"),
-            isMoving = json.boolOrNull("isMoving"),
-            event = json.stringOrNull("event"),
-        )
-    }
-
-    /**
-     * `history.ts`'s `loadHistory`: server history via `GET
-     * {base}/device/locations?limit=2000&from=&to=` when [linked] (server
-     * returns newest-first; reversed here to oldest-first for a polyline),
-     * falling back to the local buffer filtered by range when not linked OR
-     * on any request/decode failure — matching RN's `deviceFetch`, which
-     * swallows failures and returns `null` rather than throwing, unlike
-     * `DeviceLink.authorizedFetch` here, which throws `DeviceLinkError`.
-     */
-    suspend fun load(
-        deviceLink: DeviceLink,
-        linked: Boolean,
-        localPoints: List<Point>,
-        from: String? = null,
-        to: String? = null,
-    ): List<Point> {
-        if (linked) {
-            val query = buildString {
-                append("limit=2000")
-                from?.let { append("&from=").append(encode(it)) }
-                to?.let { append("&to=").append(encode(it)) }
-            }
-            val points = try {
-                val response = deviceLink.authorizedFetch("/device/locations?$query")
-                if (response.status !in 200..299) {
-                    null
-                } else {
-                    val body = JSONObject(response.body)
-                    if (body.isNull("locations")) {
-                        null
-                    } else {
-                        body.optJSONArray("locations")?.let { array ->
-                            (0 until array.length()).mapNotNull { i -> array.optJSONObject(i)?.let(::pointFromServerJson) }
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                null
-            }
-            if (points != null) return points.reversed()
-        }
-        return filterPointsByRange(localPoints, from, to)
-    }
-
-    /**
      * A picked range bound (epoch millis, from the Map screen's date/time
-     * dialogs) -> the wire format [load] sends and [parseIsoMillis] reads
-     * back. UTC, whole seconds: the same shape `Date.toISOString()` produces
-     * for RN and `Date.ISO8601Format` for iOS, which is what the server's
-     * `from`/`to` query parameters are specified against.
+     * dialogs) -> the bound format [filterPointsByRange] takes and
+     * [parseIsoMillis] reads back. UTC, whole seconds: the same shape
+     * `Date.toISOString()` produces for RN and `Date.ISO8601Format` for iOS.
      */
     fun isoUtc(millis: Long): String =
         SimpleDateFormat(ISO_PATTERNS[1], Locale.US)
             .apply { timeZone = TimeZone.getTimeZone("UTC") }
             .format(Date(millis))
-
-    private fun encode(value: String): String = URLEncoder.encode(value, "UTF-8")
 }
-
-// ---- local JSON helpers (per-file convention: `DeviceLink.kt` keeps its own
-// private `stringOrNull` rather than a shared cross-file utility; this file
-// needs the double/bool variants too). Every `is*` check below rejects a
-// present-but-wrong-typed value instead of coercing it, same reasoning as
-// `sdk/.../JsonDecoding.kt` (not directly reusable: those helpers are
-// `internal` to the `:sdk` module). ----
-
-private fun JSONObject.stringOrNull(key: String): String? =
-    if (has(key) && !isNull(key)) (opt(key) as? String) else null
-
-private fun JSONObject.doubleOrNull(key: String): Double? =
-    if (has(key) && !isNull(key)) (opt(key) as? Number)?.toDouble() else null
-
-private fun JSONObject.boolOrNull(key: String): Boolean? =
-    if (has(key) && !isNull(key)) (opt(key) as? Boolean) else null
 
 /**
  * Parses either fractional- or whole-second ISO 8601 (the two shapes a
- * server timestamp or a `Point.timestamp` may arrive in), pinned to
+ * `Point.timestamp` or a range bound may arrive in), pinned to
  * `Locale.US` + UTC — same two-pattern convention as
  * `CoordinatesSheet.kt`'s `PointFormat.parseIso` and `MapScreen.kt`'s
  * `isoNow()`. Returns `null` (never throws) for anything else, so a
@@ -155,7 +60,7 @@ private fun JSONObject.boolOrNull(key: String): Boolean? =
  * crashing the whole screen.
  *
  * `internal`, not `private`: every existing test only calls this indirectly
- * through [History.filterPointsByRange]/[History.load], both of which apply
+ * through [History.filterPointsByRange], which applies
  * the SAME offset to every timestamp they parse in a single call, so a
  * dropped `TimeZone.getTimeZone("UTC")` pin here would shift every point and
  * every `from`/`to` bound by the same amount and cancel out of every

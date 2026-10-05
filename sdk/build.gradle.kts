@@ -82,7 +82,7 @@ afterEvaluate {
                             "the same API surface as the BGeo React Native and Flutter SDKs.",
                     )
                     url.set(PROJECT_URL)
-                    // The facade's own source is MIT (see LICENSE); the proprietary terms for
+                    // The facade's own source is MIT (see LICENSE); the free closed-source terms for
                     // the engine AAR it pulls in transitively live in LICENSE-BINARY.md and in
                     // the engine artifact's own POM.
                     licenses {

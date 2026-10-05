@@ -1,6 +1,5 @@
 package dev.bgeo.example.screens
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -47,8 +46,6 @@ import dev.bgeo.example.ConfigFieldOption
 import dev.bgeo.example.ConfigFieldType
 import dev.bgeo.example.ConfigSchema
 import dev.bgeo.example.ConfigStore
-import dev.bgeo.example.DeviceLink
-import dev.bgeo.example.LinkState
 import dev.bgeo.example.LogLevel
 import com.bgeo.sdk.BackgroundGeolocation
 import com.bgeo.sdk.State
@@ -56,15 +53,12 @@ import com.bgeo.sdk.destroyLocations
 import com.bgeo.sdk.destroyLog
 import com.bgeo.sdk.getCount
 import com.bgeo.sdk.getLog
-import com.bgeo.sdk.sync
-import com.bgeo.sdk.uploadLog
 import dev.bgeo.example.LogUploader
 import dev.bgeo.example.ui.Mono
 import kotlinx.coroutines.launch
 
 /**
- * Settings — device link (registration code) and every working SDK config
- * key (applied immediately via [ConfigStore], persisted as overrides).
+ * Settings — every working SDK config key (applied immediately via [ConfigStore], persisted as overrides).
  * Section/field order mirrors `react-native/example/src/screens/
  * SettingsScreen.tsx` / `ios/Example/Sources/Screens/SettingsScreen.swift`.
  *
@@ -81,9 +75,8 @@ import kotlinx.coroutines.launch
  *    and recreates its local draft state on every rejection of that key.
  */
 @Composable
-fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: DeviceLink, logUploader: LogUploader) {
+fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, logUploader: LogUploader) {
     val overrides by configStore.overrides.collectAsState()
-    val link by appStore.link.collectAsState()
     val scope = rememberCoroutineScope()
 
     var fieldErrorKey by remember { mutableStateOf<String?>(null) }
@@ -92,7 +85,7 @@ fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: Dev
     var resetError by remember { mutableStateOf<String?>(null) }
 
     // Through `LogUploader` (see `MapScreen`'s identical note): the SDK's
-    // persisted log queue and `/device/logs` get these lines too, and the
+    // persisted log queue gets these lines too, and the
     // credential scrub applies to every one of them.
     fun log(event: String, message: String, level: LogLevel) {
         logUploader.logEvent(event, level, message)
@@ -134,12 +127,6 @@ fun SettingsScreen(appStore: AppStore, configStore: ConfigStore, deviceLink: Dev
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        LinkSection(
-            link = link,
-            deviceLink = deviceLink,
-            onLinked = { message -> log("link", message, LogLevel.INFO) },
-        )
-
         ConfigSchema.sections.forEach { section ->
             Text(
                 section.title,
@@ -284,22 +271,8 @@ private fun StateSection(appStore: AppStore, log: (String, String, LogLevel) -> 
             "isMoving=$isMovingDraft"
         }
 
-        Row(modifier = Modifier.fillMaxWidth()) {
-            Box(modifier = Modifier.weight(1f)) {
-                ActionButton("Sync now", "sync", busy, results, ::runAction) {
-                    "${BackgroundGeolocation.sync().size} records"
-                }
-            }
-            Spacer(Modifier.width(12.dp))
-            Box(modifier = Modifier.weight(1f)) {
-                ActionButton("Destroy queue", "destroyLocations", busy, results, ::runAction, danger = true) {
-                    "${BackgroundGeolocation.destroyLocations()} records"
-                }
-            }
-        }
-
-        ActionButton("Upload logs", "uploadLog", busy, results, ::runAction) {
-            "${BackgroundGeolocation.uploadLog()} rows handed to the flusher"
+        ActionButton("Destroy queue", "destroyLocations", busy, results, ::runAction, danger = true) {
+            "${BackgroundGeolocation.destroyLocations()} records"
         }
         ActionButton("Destroy log", "destroyLog", busy, results, ::runAction, danger = true) {
             "${BackgroundGeolocation.destroyLog()} rows"
@@ -389,82 +362,6 @@ private fun ActionButton(
                 color = if (outcome.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-    }
-}
-
-@Composable
-private fun LinkSection(link: LinkState, deviceLink: DeviceLink, onLinked: (String) -> Unit) {
-    var serverUrl by remember(link.linked) { mutableStateOf(link.serverUrl) }
-    var code by remember { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-
-    Column(modifier = Modifier.padding(bottom = 24.dp)) {
-        Text("Debug console", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Create a registration code in the BGeo web console (Dashboard → Registration codes) and enter it here.",
-            style = MaterialTheme.typography.bodySmall,
-        )
-        OutlinedTextField(
-            value = serverUrl,
-            onValueChange = { serverUrl = it },
-            enabled = !link.linked,
-            singleLine = true,
-            label = { Text("Server") },
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        )
-        if (!link.linked) {
-            OutlinedTextField(
-                value = code,
-                onValueChange = { code = it },
-                singleLine = true,
-                label = { Text("Registration code") },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            )
-            Button(
-                enabled = !busy && code.replace("-", "").length >= 8,
-                onClick = {
-                    busy = true
-                    error = null
-                    scope.launch {
-                        try {
-                            var trimmed = serverUrl
-                            while (trimmed.endsWith("/")) trimmed = trimmed.dropLast(1)
-                            val result = deviceLink.link(serverUrl = trimmed, code = code)
-                            onLinked("linked to console as ${result.deviceId}")
-                            code = ""
-                        } catch (e: Exception) {
-                            error = e.message
-                        }
-                        busy = false
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            ) {
-                Text(if (busy) "Linking…" else "Link device")
-            }
-        } else {
-            Text(
-                "🟢 Linked — device ${link.deviceId.orEmpty().take(8)}",
-                modifier = Modifier.padding(top = 8.dp),
-            )
-            Button(
-                enabled = !busy,
-                onClick = {
-                    busy = true
-                    scope.launch {
-                        deviceLink.unlink()
-                        onLinked("unlinked from console")
-                        busy = false
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            ) {
-                Text("Unlink")
-            }
-        }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp)) }
     }
 }
 

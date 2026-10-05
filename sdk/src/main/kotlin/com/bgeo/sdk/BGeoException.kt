@@ -8,9 +8,13 @@ import org.json.JSONObject
  * so new engine codes remain diagnosable through [code] verbatim.
  */
 sealed class BGeoException(val code: String, message: String) : Exception(message) {
+    @Deprecated("No longer emitted — the SDK is free and needs no license key. Will be removed in the next major.")
     class LicenseMissing(message: String) : BGeoException("LICENSE_MISSING", message)
+    @Deprecated("No longer emitted — the SDK is free and needs no license key. Will be removed in the next major.")
     class LicenseInvalid(message: String) : BGeoException("LICENSE_INVALID", message)
+    @Deprecated("No longer emitted — the SDK is free and needs no license key. Will be removed in the next major.")
     class LicenseExpired(message: String) : BGeoException("LICENSE_EXPIRED", message)
+    @Deprecated("No longer emitted — the SDK is free and needs no license key. Will be removed in the next major.")
     class LicenseAppMismatch(message: String) : BGeoException("LICENSE_APP_MISMATCH", message)
     class Disabled(message: String) : BGeoException("DISABLED", message)
     class NotFound(message: String) : BGeoException("NOT_FOUND", message)
@@ -18,6 +22,7 @@ sealed class BGeoException(val code: String, message: String) : Exception(messag
     class Unknown(code: String, message: String) : BGeoException(code, message)
 
     companion object {
+        @Suppress("DEPRECATION")
         fun from(code: String, message: String): BGeoException = when (code) {
             "LICENSE_MISSING" -> LicenseMissing(message)
             "LICENSE_INVALID" -> LicenseInvalid(message)
@@ -37,8 +42,7 @@ sealed class BGeoException(val code: String, message: String) : Exception(messag
          * that only cares about the code/message.
          *
          * The engine emits both fields as JSON strings at every
-         * `locationerror` site (`BGGeoEngine.kt:1122`'s license-gate check and
-         * `:1160`'s watchPosition tick both build the payload from a Kotlin
+         * `locationerror` site (the watchPosition tick builds the payload from a Kotlin
          * `String`, per `BGGeoCallback.error(code: String, message: String)`'s
          * signature) - there is no NUMBER-coded shape to handle on Android,
          * unlike the iOS twin. [stringOrNull] is still used (rather than a

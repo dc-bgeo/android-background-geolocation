@@ -92,17 +92,6 @@ class FacadeGeofenceTest {
         }
     }
 
-    @Test
-    fun `addGeofences throws the engine's LICENSE_EXPIRED code verbatim`() = runTest {
-        engine.stubbedAddGeofences = FakeEngine.Outcome.failure("LICENSE_EXPIRED", "BGeo license check failed (LICENSE_EXPIRED)")
-        try {
-            BackgroundGeolocation.addGeofences(listOf(home))
-            fail("expected a rejection")
-        } catch (e: BGeoException) {
-            assertEquals("LICENSE_EXPIRED", e.code)
-        }
-    }
-
     // ---- removeGeofence / removeGeofences ----------------------------------
 
     @Test

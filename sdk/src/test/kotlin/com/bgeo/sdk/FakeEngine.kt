@@ -68,9 +68,6 @@ internal class FakeEngine : Engine {
         resumeTrackingIfEnabledCallCount++
     }
 
-    var stubbedLicenseErrorCode: String? = null
-    override fun licenseErrorCode(): String? = stubbedLicenseErrorCode
-
     val appliedConfigs = mutableListOf<JSONObject?>()
     override fun applyConfig(map: JSONObject?) {
         appliedConfigs.add(map)

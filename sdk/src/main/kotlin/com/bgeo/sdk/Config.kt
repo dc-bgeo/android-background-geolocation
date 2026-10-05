@@ -117,11 +117,7 @@ data class DistractionDetectionConfig(
  * To express "unset this key" instead, set the property to its `CLEAR_*`
  * sentinel (see [CLEAR_STRING]).
  *
- * The license key is NOT a config option — set it in the app manifest
- * (`<meta-data android:name="com.bgeo.license" android:value="BGEO1..."/>`),
- * read at launch before this API is used. In a RELEASE build a bad key makes
- * `ready()`/`start()` reject with a `LICENSE_*` code; debuggable builds
- * always run unlicensed (evaluation), whatever the key state.
+ * No license key is needed: the SDK is free.
  */
 data class Config(
     val locationAuthorizationRequest: String? = null,

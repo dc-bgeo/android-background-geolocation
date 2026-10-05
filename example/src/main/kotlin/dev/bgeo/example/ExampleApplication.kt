@@ -2,7 +2,6 @@ package dev.bgeo.example
 
 import android.app.Application
 import android.content.Context
-import android.os.Build
 import com.bgeo.sdk.BackgroundGeolocation
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -52,9 +51,7 @@ class ExampleApplication : Application() {
 /**
  * The app's one set of long-lived objects, built once per process and shared
  * by every screen. Deliberately not per-Activity: `AppStore`'s log/point
- * buffers and `DeviceLink`'s state must survive a rotation, and two
- * `DeviceLink`s racing the same `SharedPreferences` would defeat the
- * refresh serialisation `DeviceLink.authorizedFetch` implements.
+ * buffers and `ConfigStore`'s overrides must survive a rotation.
  */
 class AppContainer(context: Context) {
     private val storage: Storage = SharedPreferencesStorage(
@@ -64,18 +61,11 @@ class AppContainer(context: Context) {
     val store = AppStore()
     val logUploader = LogUploader(store)
     val configStore = ConfigStore(storage)
-    val deviceLink = DeviceLink(
-        http = HttpUrlConnectionHttp(),
-        storage = storage,
-        deviceInfo = deviceInfo(context),
-        store = store,
-    )
-    val geofences = Geofences(store = store, deviceLink = deviceLink)
+    val geofences = Geofences(store = store)
 
     fun bootstrap(scope: CoroutineScope) = Bootstrap(
         store = store,
         configStore = configStore,
-        deviceLink = deviceLink,
         geofences = geofences,
         logUploader = logUploader,
         scope = scope,
@@ -85,17 +75,3 @@ class AppContainer(context: Context) {
         const val PREFS_NAME = "bgeo.example"
     }
 }
-
-/**
- * `DeviceInfo` is built here rather than read inside `DeviceLink`, because
- * this module's unit tests stub all of `android.jar` — `Build.MODEL` and
- * friends return stub values there. See `DeviceInfo`'s doc comment.
- */
-@Suppress("DEPRECATION") // getPackageInfo(String, Int) — the API 33 replacement needs minSdk 33.
-private fun deviceInfo(context: Context): DeviceInfo = DeviceInfo(
-    model = Build.MODEL ?: "android",
-    osVersion = Build.VERSION.RELEASE ?: "",
-    appVersion = runCatching {
-        context.packageManager.getPackageInfo(context.packageName, 0).versionName
-    }.getOrNull() ?: "0.0.0",
-)

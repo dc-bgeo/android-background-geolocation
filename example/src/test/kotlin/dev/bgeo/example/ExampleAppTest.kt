@@ -23,7 +23,7 @@ import org.junit.Test
 /**
  * Covers `ExampleApp.kt`'s app-level wiring: the bootstrap guard, the
  * `baseConfig` <-> `ConfigSchema` coupling, and the authorization
- * subscription's redact-AND-persist pair.
+ * subscription's redaction.
  *
  * The redaction test deliberately runs through [Bootstrap]'s REAL
  * subscription wiring — [FakeEventSubscriptions] captures the handler
@@ -74,34 +74,12 @@ class ExampleAppTest {
         assertEquals(true, harness.store.status.value.ready)
     }
 
-    @Test
-    fun `bootstrap restores a persisted device link before ready`() = runTest {
-        val storage = InMemoryStorage()
-        storage.putString(
-            "bgeo:link",
-            """{"serverUrl":"https://app.bgeo.dev","deviceId":"d1","accessToken":"at-1","refreshToken":"rt-1"}""",
-        )
-        val harness = harness(storage = storage)
-
-        harness.bootstrap.run()
-
-        // Without this the Settings screen offers to link an already-linked
-        // device and the Map screen's status row reads "not linked".
-        assertEquals(true, harness.store.link.value.linked)
-        assertEquals("d1", harness.store.link.value.deviceId)
-    }
-
     // ---- trap 5: the authorization event ---------------------------------
 
     @Test
     fun `the authorization subscription logs no token text into either sink`() = runTest {
-        val storage = InMemoryStorage()
-        storage.putString(
-            "bgeo:link",
-            """{"serverUrl":"https://app.bgeo.dev","deviceId":"d1","accessToken":"at-old","refreshToken":"rt-old"}""",
-        )
         val events = FakeEventSubscriptions()
-        val harness = harness(storage = storage, events = events)
+        val harness = harness(events = events)
         harness.bootstrap.run()
 
         events.authorizationHandlers.single().invoke(
@@ -122,33 +100,10 @@ class ExampleAppTest {
         assertTrue(data.getBoolean("hasAccessToken"))
         assertTrue(data.getBoolean("hasRefreshToken"))
 
-        // Sink 2: the SDK's persisted log queue (`bgeo.db` -> /device/logs).
+        // Sink 2: the SDK's persisted log queue (`bgeo.db`).
         val written = harness.written.last()
         assertFalse("${written.second} ${written.third}".contains(ACCESS_TOKEN))
         assertFalse("${written.second} ${written.third}".contains(REFRESH_TOKEN))
-    }
-
-    @Test
-    fun `the authorization subscription still persists the rotated pair`() = runTest {
-        val storage = InMemoryStorage()
-        storage.putString(
-            "bgeo:link",
-            """{"serverUrl":"https://app.bgeo.dev","deviceId":"d1","accessToken":"at-old","refreshToken":"rt-old"}""",
-        )
-        val events = FakeEventSubscriptions()
-        val harness = harness(storage = storage, events = events)
-        harness.bootstrap.run()
-
-        events.authorizationHandlers.single().invoke(
-            JSONObject("""{"success":true,"accessToken":"$ACCESS_TOKEN","refreshToken":"$REFRESH_TOKEN"}"""),
-        )
-
-        // Redacting must not have cost the persistence: both are required.
-        // Losing this makes every app-side refresh fail once the engine has
-        // rotated the pair natively.
-        val stored = JSONObject(storage.getString("bgeo:link")!!)
-        assertEquals(ACCESS_TOKEN, stored.getString("accessToken"))
-        assertEquals(REFRESH_TOKEN, stored.getString("refreshToken"))
     }
 
     @Test
@@ -274,21 +229,12 @@ class ExampleAppTest {
         val store = AppStore()
         val written = mutableListOf<Triple<LogLevel, String, JSONObject?>>()
         val logUploader = LogUploader(store) { level, message, data -> written += Triple(level, message, data) }
-        val deviceLink = DeviceLink(
-            http = FakeHttp(),
-            storage = storage,
-            deviceInfo = DeviceInfo("Pixel 7", "14", "0.1.0"),
-            store = store,
-            applyConfig = {},
-        )
         return Harness(
             bootstrap = Bootstrap(
                 store = store,
                 configStore = ConfigStore(storage, applyConfig = {}),
-                deviceLink = deviceLink,
                 geofences = Geofences(
                     store = store,
-                    deviceLink = deviceLink,
                     getGeofencesCall = { emptyList<Geofence>() },
                 ),
                 logUploader = logUploader,

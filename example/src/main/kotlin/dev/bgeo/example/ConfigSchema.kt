@@ -40,9 +40,8 @@ package dev.bgeo.example
  *    under `core/android/engine`.
  *  - `locationAuthorizationAlert`, `headers`, `params`, `extras`: nested
  *    dictionaries; `ConfigField.type` has no editor for a raw map.
- *  - `url`, `logUrl`, `authorization`: owned exclusively by `DeviceLink`
- *    (Task 3) — editing them independently here would desync the linked
- *    server relationship.
+ *  - `url`, `logUrl`, `authorization`: the example app uploads nowhere, so
+ *    there is no server to point them at; set them in your own app.
  *  - `diagnosticExtras` is the one exception KEPT despite not being read by
  *    the Android engine yet (confirmed: no occurrence anywhere under
  *    `core/android/engine`) — `Config.kt` does not tag it `@platform ios`
@@ -228,12 +227,8 @@ object ConfigSchema {
                 ConfigField(key = "batchSync", label = "Batch sync", type = ConfigFieldType.BOOL, default = false),
                 // CONFIRMED — engine default -1/unbatched (BGGeoHttpStore.kt:60
                 // field init, :198 config fallback). NOT the stale 50 the other
-                // consoles shipped with before their own fix; `DeviceLink` (Task 3)
-                // sets 50 once linked, independently of this default.
-                ConfigField(
-                    key = "maxBatchSize", label = "Max batch size", type = ConfigFieldType.NUMBER, default = -1,
-                    hint = "DeviceLink sets 50 once linked, independently of this default",
-                ),
+                // consoles shipped with before their own fix.
+                ConfigField(key = "maxBatchSize", label = "Max batch size", type = ConfigFieldType.NUMBER, default = -1),
                 // CONFIRMED — engine default 30000 (BGGeoHttpStore.kt:199: `?: 30_000L`).
                 // NOT the stale 60000 the other consoles shipped with before their own fix.
                 ConfigField(key = "httpTimeoutMs", label = "HTTP timeout", type = ConfigFieldType.NUMBER, default = 30000, unit = "ms"),

@@ -2,8 +2,8 @@
 
 A developer console for the BGeo Android SDK: three tabs (Map, Logs,
 Settings) over a live engine. It is the Kotlin sibling of
-`react-native/example` and `ios/Example` — same screens, same device-link
-flow, same schema-driven settings — and it doubles as the source of the
+`react-native/example` and `ios/Example` — same screens, same
+schema-driven settings — and it doubles as the source of the
 Android screenshots in the docs.
 
 It is a debug tool, not a sample of minimal integration. If you want the
@@ -24,40 +24,20 @@ tiles, and the engine AAR is resolved from `android/libs`
 (`settings.gradle.kts`'s file-backed Maven repo) until it goes to Maven
 Central.
 
-**A debuggable build runs unlicensed.** The engine logs
-`BGeo — unlicensed evaluation (debuggable build, LICENSE_MISSING)` at start-up
-and works normally — see `core/android/engine/.../BGGeoLicenseManager.kt:18`.
-A release build of your own app needs a real key.
-
-## Linking to the web console
-
-Tracking works unlinked; linking adds server upload, geofence sync and the
-log stream you can view from a browser.
-
-1. In the BGeo web console: **Dashboard → Registration codes**, create a code.
-2. In the app: **Settings → Debug console**, keep `https://app.bgeo.dev` as
-   the server, paste the code, tap **Link device**.
-
-What that does: `POST /device/register` exchanges the code for a device id and
-a JWT pair, which are persisted and pushed into the engine as `url`, `logUrl`
-and an `authorization` block (`src/main/kotlin/dev/bgeo/example/DeviceLink.kt`).
-From then on the engine uploads locations and logs itself, refreshing the
-tokens natively — the app persists each rotated pair from `onAuthorization` so
-its own API calls keep working too.
-
-**Unlink** clears all of that through the engine's clear sentinel, not empty
-strings, so it stops uploading to a server it is no longer linked to.
+Everything stays on the device: locations, logs and geofences are kept
+locally and shown in the app. The app uploads nothing — to try the SDK's HTTP
+upload, set `url` (and optionally `authorization`) in your own app's `Config`.
 
 ## How it is wired
 
-- `ExampleApplication.kt:31` — `BackgroundGeolocation.attach(this)` in
+- `ExampleApplication.kt:30` — `BackgroundGeolocation.attach(this)` in
   `Application.onCreate`, because the system also starts this process
   headlessly for boot, geofence and service events (see
-  `BackgroundGeolocation.attach`'s KDoc, `../sdk/.../BackgroundGeolocation.kt:73`).
-  `AppContainer` (`:59`) holds the one `AppStore`/`DeviceLink`/`ConfigStore`
+  `BackgroundGeolocation.attach`'s KDoc, `../sdk/.../BackgroundGeolocation.kt:84`).
+  `AppContainer` (`:56`) holds the one `AppStore`/`ConfigStore`/`Geofences`
   the whole process shares.
-- `ExampleApp.kt:126` — `Bootstrap` subscribes to all nine event streams
-  FIRST, then restores a persisted link, then calls `ready()`. That order is
+- `ExampleApp.kt:125` — `Bootstrap` subscribes to all nine event streams
+  FIRST, then calls `ready()`. That order is
   deliberate: the SDK's event hub buffers per event name until the first
   subscriber attaches, so subscribing late can lose launch-time events.
   It runs exactly once per process.
@@ -66,8 +46,8 @@ strings, so it stops uploading to a server it is no longer linked to.
   `ConfigSchema` default; `ExampleAppTest` fails if they drift, because that
   column is what Settings displays and what **Reset** pushes back.
 - `LogUploader.kt` — the single logging entry point. Every line goes to both
-  the Logs screen and the SDK's persisted log queue (which survives app kills
-  and uploads to `/device/logs` once linked). Nothing calls
+  the Logs screen and the SDK's persisted log queue (which survives app
+  kills). Nothing calls
   `AppStore.appendLog` directly.
 
 ## Things worth knowing
@@ -89,14 +69,8 @@ strings, so it stops uploading to a server it is no longer linked to.
   credential echoed back by a server inside an error body would reach the log
   unredacted. That is a limit of the approach, not a defect in it — it has
   never been claimed as covered. Keep credentials out of server error bodies.
-- **`maxBatchSize` reads wrong in Settings after linking.** `DeviceLink`
-  pushes `maxBatchSize = 50` directly to the engine, outside `ConfigStore`'s
-  bookkeeping, so Settings keeps showing the schema default while the engine
-  runs 50. Same on iOS. Unresolved by design — it is an owner decision whether
-  to route those pushes through the overrides or relabel the column.
-- **No history range on the map.** `History.kt` implements the server/local
-  history query the RN console's from/to bar uses, but no screen consumes it
-  yet; the map renders the live in-memory track (capped at 2000 points).
+- **The map's from/to range filters the local track.** `History.kt` filters
+  the in-memory buffer (capped at 2000 points) — there is no server history.
 - **Compose UI is not unit-tested** in this module — there is no
   instrumentation or Robolectric harness. Logic lives in plain Kotlin files
   (`ConfigSchema`, `ConfigStore`, `MapRebuild`, `LogsScreenLogic`, …) which

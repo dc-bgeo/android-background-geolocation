@@ -17,14 +17,6 @@ import org.junit.Test
 class BGeoExceptionTest {
 
     @Test
-    fun `license codes map to their typed subclasses`() {
-        assertTrue(BGeoException.from("LICENSE_MISSING", "m") is BGeoException.LicenseMissing)
-        assertTrue(BGeoException.from("LICENSE_INVALID", "m") is BGeoException.LicenseInvalid)
-        assertTrue(BGeoException.from("LICENSE_EXPIRED", "m") is BGeoException.LicenseExpired)
-        assertTrue(BGeoException.from("LICENSE_APP_MISMATCH", "m") is BGeoException.LicenseAppMismatch)
-    }
-
-    @Test
     fun `known operational codes map to their typed subclasses`() {
         assertTrue(BGeoException.from("DISABLED", "m") is BGeoException.Disabled)
         assertTrue(BGeoException.from("NOT_FOUND", "m") is BGeoException.NotFound)
@@ -42,7 +34,6 @@ class BGeoExceptionTest {
     @Test
     fun `code round-trips for every typed case`() {
         val codes = listOf(
-            "LICENSE_MISSING", "LICENSE_INVALID", "LICENSE_EXPIRED", "LICENSE_APP_MISMATCH",
             "DISABLED", "NOT_FOUND", "INVALID_GEOFENCE", "WHATEVER",
         )
         for (code in codes) {
@@ -127,22 +118,11 @@ class BGeoExceptionTest {
 
     // ---- fromLocationErrorEvent (C1: `locationerror` is unreachable) -------
     //
-    // The engine has exactly two `locationerror` emit sites
-    // (BGGeoEngine.kt:1122, :1160); both build the payload from a Kotlin
-    // `String` (the license-gate check literally puts its `String?
-    // licenseError`, and the watchPosition tick forwards `BGGeoCallback.
-    // error(code: String, message: String)`'s own `code` param) - so both
+    // The engine's `locationerror` emit site (the watchPosition tick) builds
+    // the payload from a Kotlin `String` - it forwards `BGGeoCallback.
+    // error(code: String, message: String)`'s own `code` param - so the
     // shapes below are JSON STRINGS, never NUMBERS. Unlike the iOS twin,
     // there is no NUMBER-coded shape to handle on Android.
-
-    @Test
-    fun `decodes the license-gate site's shape (startWatch on an unlicensed build)`() {
-        val json = JSONObject().put("code", "LICENSE_EXPIRED").put("message", "Tracking is not licensed")
-        val error = BGeoException.fromLocationErrorEvent(json)
-        assertTrue(error is BGeoException.LicenseExpired)
-        assertEquals("LICENSE_EXPIRED", error!!.code)
-        assertEquals("Tracking is not licensed", error.message)
-    }
 
     @Test
     fun `decodes the watchTick site's shape (a failing getCurrentPosition forwarded verbatim)`() {
@@ -163,13 +143,13 @@ class BGeoExceptionTest {
 
     @Test
     fun `a payload missing code is dropped rather than crashing`() {
-        val json = JSONObject().put("message", "Tracking is not licensed")
+        val json = JSONObject().put("message", "Location request timed out")
         assertNull(BGeoException.fromLocationErrorEvent(json))
     }
 
     @Test
     fun `a payload missing message is dropped rather than crashing`() {
-        val json = JSONObject().put("code", "LICENSE_MISSING")
+        val json = JSONObject().put("code", "408")
         assertNull(BGeoException.fromLocationErrorEvent(json))
     }
 

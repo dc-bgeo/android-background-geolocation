@@ -70,15 +70,15 @@ val baseConfig = Config(
     stopOnTerminate = true,
     startOnBoot = false,
     debug = true,
-    // Native logger at INFO for the example app; upload starts once a device
-    // link supplies `logUrl` (`DeviceLink.applySdkConfig`).
+    // Native logger at INFO for the example app (persisted on device, shown
+    // on the Logs screen).
     logLevel = 3,
 )
 
 /**
  * The nine SDK event streams [Bootstrap] subscribes to, behind an interface.
  *
- * Same test-seam reasoning as `DeviceLink.applyConfig` and
+ * Same test-seam reasoning as `ConfigStore.applyConfig` and
  * `Geofences.addGeofenceCall`: `BackgroundGeolocation` is a Kotlin `object`
  * with static members, so it cannot be swapped for a fake. Routing the
  * subscriptions through this interface lets `ExampleAppTest` capture the
@@ -112,21 +112,19 @@ object SdkEventSubscriptions : EventSubscriptions {
 }
 
 /**
- * Brings the SDK up exactly once per process: subscribe, restore the device
- * link, then `ready()`.
+ * Brings the SDK up exactly once per process: subscribe, then `ready()`.
  *
  * Ordering mirrors `App.tsx`'s effect and `BGeoExampleApp.swift`'s
  * `bootstrap()` line for line, and it matters: `EventHub` buffers up to 64
  * events per event name until a subscriber attaches, then LATCHES for that
  * name — one buffered replay, delivered to whichever subscriber attaches
- * first, never re-armed. Subscribing after `restore()`/`ready()`'s
+ * first, never re-armed. Subscribing after `ready()`'s
  * `setConfig` risks losing launch-time events; subscribing before costs
  * nothing.
  */
 class Bootstrap(
     private val store: AppStore,
     private val configStore: ConfigStore,
-    private val deviceLink: DeviceLink,
     private val geofences: Geofences,
     private val logUploader: LogUploader,
     private val scope: CoroutineScope,
@@ -153,7 +151,6 @@ class Bootstrap(
         hasBootstrapped = true
 
         subscribeToEvents()
-        deviceLink.restore()
 
         try {
             val state = readyCall(configStore.merged(into = baseConfig))
@@ -220,12 +217,9 @@ class Bootstrap(
     }
 
     /**
-     * The raw event is `{success, accessToken, refreshToken}` — live JWTs.
-     * Two things have to happen, and neither substitutes for the other
-     * (task brief, step 0c): the real pair is persisted so the app-side
-     * `authorizedFetch` keeps working after a native refresh, and the LOGGED
-     * payload is reduced to presence booleans before it can reach the Logs
-     * screen / `bgeo.db` / `/device/logs`.
+     * The raw event is `{success, accessToken, refreshToken}` — live JWTs when
+     * an app configures `authorization`. The LOGGED payload is reduced to
+     * presence booleans before it can reach the Logs screen / `bgeo.db`.
      *
      * `LogUploader` would strip both tokens by key anyway; logging presence
      * booleans here is the same shape RN and iOS log, and means this call
@@ -243,7 +237,6 @@ class Bootstrap(
             if (success) "refreshed" else "failed",
             data,
         )
-        deviceLink.persistRotatedTokens(event)
     }
 
     internal fun handleGeofence(event: GeofenceEvent) {
@@ -273,12 +266,10 @@ class Bootstrap(
      * Worth being precise about what that means for redaction:
      * `LogUploader`'s scrub is key-based — it can only recognise a credential
      * by the name of the key holding it. `responseText` is one opaque string
-     * with no internal keys to match, so if the server ever echoed a token
-     * back inside an error body, it would reach the Logs screen and
-     * `/device/logs` unredacted. That is a limit of the key-based approach,
-     * not a gap in its implementation, and it has never been claimed as
-     * covered. The server side is what keeps it true: BGeo's own error bodies
-     * carry a message, never the credential.
+     * with no internal keys to match, so if a server ever echoed a token
+     * back inside an error body, it would reach the Logs screen unredacted.
+     * That is a limit of the key-based approach, not a gap in its
+     * implementation, and it has never been claimed as covered.
      */
     internal fun handleHttp(event: HttpEvent) {
         val data = JSONObject()
@@ -334,7 +325,6 @@ fun ExampleApp(container: AppContainer, permissionRequester: PermissionRequester
             ExampleTab.MAP -> MapScreen(
                 appStore = container.store,
                 logUploader = container.logUploader,
-                deviceLink = container.deviceLink,
                 permissionRequester = permissionRequester,
                 onGeofenceRequest = { geofenceRequest = it },
             )
@@ -342,7 +332,6 @@ fun ExampleApp(container: AppContainer, permissionRequester: PermissionRequester
             ExampleTab.SETTINGS -> SettingsScreen(
                 appStore = container.store,
                 configStore = container.configStore,
-                deviceLink = container.deviceLink,
                 logUploader = container.logUploader,
             )
         }

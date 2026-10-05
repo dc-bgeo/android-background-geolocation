@@ -33,8 +33,7 @@ import org.json.JSONObject
 class ConfigStore(
     private val storage: Storage,
     /**
-     * Test seam, same shape as `DeviceLink.applyConfig` (see that file's doc
-     * comment): `BackgroundGeolocation` is a Kotlin `object` with static
+     * Test seam: `BackgroundGeolocation` is a Kotlin `object` with static
      * members, so it cannot be swapped for a fake the way the SDK's own
      * `Engine` can. Injecting a suspend lambda lets tests assert on exactly
      * the `Config` handed to `setConfig`, and simulate a rejection, without a

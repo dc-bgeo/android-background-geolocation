@@ -12,9 +12,9 @@ import java.text.SimpleDateFormat
 /**
  * Single log pipeline: [logEvent] writes the structured line into the app
  * store (Logs screen) AND into the SDK's own persisted log queue via
- * `BackgroundGeolocation.logger`, which survives app kills and uploads
- * batches to `/device/logs` with the engine's own auth — unlike an app-only
- * buffer that dies with the process.
+ * `BackgroundGeolocation.logger`, which survives app kills — unlike an
+ * app-only buffer that dies with the process. (The name is kept from the
+ * cross-client contract; this example app uploads its logs nowhere.)
  *
  * A Kotlin port of `react-native/example/src/logUploader.ts`;
  * `ios/Example/Sources/LogUploader.swift` is the same port for iOS. This is
@@ -40,7 +40,7 @@ import java.text.SimpleDateFormat
  * A later task will wire `BackgroundGeolocation.onAuthorization`'s raw
  * `{success, accessToken, refreshToken}` event body straight into this
  * function's `data` parameter; on both the iOS and RN consoles that body
- * reached the on-device log, the `/device/logs` upload, and the Logs
+ * reached the on-device log and the Logs
  * screen's UI verbatim before it was caught and patched at the call site.
  * Redacting here instead means no future call site has to remember to do it
  * for `data` — see `LogUploaderTest` for the test that proves the raw token
@@ -65,7 +65,7 @@ class LogUploader(
     private val store: AppStore,
     /**
      * Test seam: `BackgroundGeolocation.logger` is backed by a Kotlin
-     * `object` with static members (same reasoning as `DeviceLink`'s
+     * `object` with static members (same reasoning as `ConfigStore`'s
      * `applyConfig` and `Geofences`'s `*Call` properties), so it can't be
      * swapped for a fake directly — tests inject a plain lambda instead and
      * assert on exactly the `(level, message, payload)` triple it receives.
@@ -83,7 +83,7 @@ class LogUploader(
     /**
      * `logUploader.ts`'s `logEvent`: append the structured line to the app
      * store's log buffer (Logs screen), then hand the same event to the
-     * SDK's persisted/uploaded log queue with the shape both reference
+     * SDK's persisted log queue with the shape both reference
      * clients send — `write(message ?? event, {event, ...(data != null ?
      * {data} : {})})`.
      *
@@ -135,7 +135,7 @@ private const val MIN_SCRUB_LENGTH = 8
  * on the FULL key name (case-insensitive, `_` stripped) so `accessToken`,
  * `access_token` and `ACCESS_TOKEN` are all one entry — camelCase (the shape
  * `BackgroundGeolocation.onAuthorization`/`onProviderChange` emit),
- * snake_case (the server API and `StoredLink`'s own persisted JSON) and the
+ * snake_case (typical server API JSON) and the
  * bare/HTTP-header spellings a later task's `onHttp`/headers-map
  * subscriptions can carry (`token`, `Authorization`, `bearer`, `id_token`/
  * `idToken`, `jwt`).
@@ -160,9 +160,8 @@ private fun isSensitiveKey(key: String): Boolean = key.lowercase(Locale.US).repl
 /**
  * Deep copy of [json] with every [SENSITIVE_KEYS] string value replaced by a
  * fixed marker (never simply dropped — a missing key would erase the "there
- * was a token here" signal the redacted line is supposed to preserve, e.g.
- * `DeviceLink.kt`'s `StoredLink.toString()` keeps the same
- * `accessToken=<redacted>` shape). Nested objects/arrays are walked
+ * was a token here" signal the redacted line is supposed to preserve, as an
+ * `accessToken=<redacted>` shape does). Nested objects/arrays are walked
  * recursively so a token can't hide one level down. Every raw value replaced
  * this way is appended to [secrets] so [LogUploader.logEvent] can also strip
  * it out of the free-text `message`/`event` it writes alongside `data`.

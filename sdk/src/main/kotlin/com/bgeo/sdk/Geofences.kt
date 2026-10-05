@@ -17,14 +17,13 @@ import org.json.JSONArray
 
 /**
  * Delegates to [addGeofences] with a one-element list rather than
- * duplicating the license-gated add logic (`BGGeoEngine.kt:1010-1023`).
+ * duplicating the add logic (`BGGeoEngine.kt:1010-1023`).
  */
 suspend fun BackgroundGeolocation.addGeofence(geofence: Geofence) = addGeofences(listOf(geofence))
 
 /**
- * The engine gates the licence here: an error can be a `LICENSE_*` code as
- * well as `INVALID_GEOFENCE` (`BGGeoEngine.kt:1010-1023`) — [awaitCallback]
- * turns either into the matching typed [BGeoException], code intact.
+ * An invalid geofence rejects with `INVALID_GEOFENCE` (`BGGeoEngine.kt:1010-1023`)
+ * — [awaitCallback] turns it into the matching typed [BGeoException], code intact.
  */
 suspend fun BackgroundGeolocation.addGeofences(geofences: List<Geofence>) {
     val array = JSONArray().apply { geofences.forEach { put(it.toJson()) } }

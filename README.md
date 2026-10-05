@@ -9,6 +9,9 @@ underneath, and its method/event names deliberately mirror
 `react-native/src/index.ts` so a developer moving between BGeo's SDKs finds
 the same vocabulary.
 
+The SDK is **free**, including for commercial apps: no license key, no
+registration, no payment.
+
 ## Installation
 
 ```kotlin
@@ -25,7 +28,7 @@ The `libs/` directory in this repo is a local Maven repo holding the same
 engine AAR, wired in `settings.gradle.kts`. It stays: it is how the example
 app builds against an engine version that has not been published yet.
 
-Full documentation: https://bgeo.dev/docs/android/?utm_source=github&utm_medium=readme&utm_campaign=android
+Full documentation: https://bgeo.dev/docs/android/
 
 ## Integration
 
@@ -59,25 +62,7 @@ background-location disclosure. Add it to your app's `AndroidManifest.xml`:
 <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 ```
 
-### 3. Licence key
-
-The licence key is **not** a `Config` property. It's read from your app's
-manifest at launch:
-
-```xml
-<application>
-    <meta-data android:name="com.bgeo.license" android:value="BGEO1..." />
-</application>
-```
-
-(source of the exact shape: `react-native/src/types.ts:138-144`). In a
-release build, a missing/invalid/expired/mismatched key makes `ready()`/
-`start()` reject with a `LICENSE_*` `BGeoException`. A **debuggable** build
-always runs unlicensed (evaluation mode) regardless of the key — if tracking
-silently works while debugging but rejects in release, check the key before
-assuming it's broken.
-
-### 4. Permissions
+### 3. Permissions
 
 Construct a `PermissionRequester` in your `Activity`'s (or `Fragment`'s)
 `onCreate`, before it reaches `STARTED` — `ActivityResultCaller.
@@ -102,7 +87,7 @@ combined foreground+background request from API 30 onward. A denial at one
 stage does not stop the escalation; it moves on to the next permission so a
 user who denies "Always" location can still grant activity recognition.
 
-### 5. Quickstart
+### 4. Quickstart
 
 ```kotlin
 lifecycleScope.launch {
@@ -138,11 +123,15 @@ To run a single test class or method, use the variant task directly —
 ./gradlew :sdk:testDebugUnitTest --tests '*ConfigTest*'
 ```
 
+## Support
+
+Questions and bug reports: [GitHub Issues](https://github.com/dc-bgeo/android-background-geolocation/issues).
+
 ## License
 
 The Kotlin facade (`sdk/src/`, `example/`) is **MIT** — see
 [`LICENSE`](./LICENSE).
 
 The `dev.bgeo:bgeo-android` engine AAR this facade depends on is
-**proprietary** and requires a license key in release builds — see
-[`LICENSE-BINARY.md`](./LICENSE-BINARY.md).
+closed-source but **free to use** — no license key is needed, in debug or
+release builds. See [`LICENSE-BINARY.md`](./LICENSE-BINARY.md).

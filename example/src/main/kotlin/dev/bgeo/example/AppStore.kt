@@ -8,8 +8,8 @@ import kotlinx.coroutines.flow.update
 
 /**
  * Tiny shared store for the example app: structured log lines (same shape as
- * `/device/logs` events), breadcrumb points, the SDK geofence set, engine
- * status and the device-link state.
+ * the SDK's log events), breadcrumb points, the SDK geofence set and engine
+ * status.
  *
  * A Kotlin port of `react-native/example/src/appStore.ts` (the cross-client
  * contract); `ios/Example/Sources/AppStore.swift` is the same port for iOS
@@ -19,7 +19,7 @@ import kotlinx.coroutines.flow.update
 
 enum class LogLevel { VERBOSE, DEBUG, INFO, WARN, ERROR }
 
-/** Exactly the event shape uploaded to /device/logs — what you see in the app is what the web console shows. */
+/** One structured log line, as shown on the Logs screen. */
 data class LogLine(
     val ts: String, // ISO
     val level: LogLevel,
@@ -49,12 +49,6 @@ data class Point(
     val geofence: PointGeofence? = null,
 )
 
-data class LinkState(
-    val serverUrl: String = "https://app.bgeo.dev",
-    val linked: Boolean = false,
-    val deviceId: String? = null,
-)
-
 data class EngineStatus(
     val ready: Boolean = false,
     val enabled: Boolean = false,
@@ -80,9 +74,6 @@ class AppStore {
     private val _geofences = MutableStateFlow<List<Geofence>>(emptyList())
     val geofences: StateFlow<List<Geofence>> = _geofences.asStateFlow()
 
-    private val _link = MutableStateFlow(LinkState())
-    val link: StateFlow<LinkState> = _link.asStateFlow()
-
     private val _status = MutableStateFlow(EngineStatus())
     val status: StateFlow<EngineStatus> = _status.asStateFlow()
 
@@ -105,27 +96,6 @@ class AppStore {
 
     fun setGeofences(geofences: List<Geofence>) {
         _geofences.value = geofences
-    }
-
-    /**
-     * Partial update: only the parameters passed override the current link state (mirrors
-     * `appStore.ts`'s `setLink(link: Partial<LinkState>)`). `deviceId` needs an explicit clear
-     * flag, not a plain nullable parameter, because Kotlin can't distinguish "omitted" from
-     * "passed null" through a single `String?` parameter — same reasoning as `AppStore.swift`.
-     */
-    fun setLink(
-        serverUrl: String? = null,
-        linked: Boolean? = null,
-        deviceId: String? = null,
-        clearDeviceId: Boolean = false,
-    ) {
-        _link.update { current ->
-            current.copy(
-                serverUrl = serverUrl ?: current.serverUrl,
-                linked = linked ?: current.linked,
-                deviceId = if (clearDeviceId) null else deviceId ?: current.deviceId,
-            )
-        }
     }
 
     /** Partial update, same shape as `setStatus(status: Partial<EngineStatus>)`. */

@@ -144,44 +144,10 @@ class FacadeLifecycleTest {
         assertFalse(state.enabled)
     }
 
-    @Test
-    fun `ready throws the engine's licence code`() = runTest {
-        engine.stubbedLicenseErrorCode = "LICENSE_EXPIRED"
-        try {
-            BackgroundGeolocation.ready(Config())
-            fail("expected a license error")
-        } catch (e: BGeoException.LicenseExpired) {
-            assertEquals("LICENSE_EXPIRED", e.code)
-        }
-    }
+    // ---- start / stop / setConfig ------------------------------------------
 
     @Test
-    fun `ready applied the config before the licence check failed`() = runTest {
-        // Order matters: the engine reads the license key out of the config.
-        engine.stubbedLicenseErrorCode = "LICENSE_MISSING"
-        try {
-            BackgroundGeolocation.ready(Config(debug = true))
-        } catch (e: BGeoException) {
-            // expected
-        }
-        assertEquals(1, engine.appliedConfigs.size)
-    }
-
-    // ---- start / stop / setConfig licence gating ----------------------------
-
-    @Test
-    fun `start does not start tracking on a bad licence`() = runTest {
-        engine.stubbedLicenseErrorCode = "LICENSE_APP_MISMATCH"
-        try {
-            BackgroundGeolocation.start()
-        } catch (e: BGeoException) {
-            // expected
-        }
-        assertEquals("tracking must not start on a bad license", 0, engine.startTrackingCallCount)
-    }
-
-    @Test
-    fun `start starts tracking when licensed`() = runTest {
+    fun `start starts tracking`() = runTest {
         engine.stubbedStateMap = JSONObject().put("enabled", true)
         val state = BackgroundGeolocation.start()
         assertEquals(1, engine.startTrackingCallCount)
@@ -189,16 +155,14 @@ class FacadeLifecycleTest {
     }
 
     @Test
-    fun `stop never consults the licence`() = runTest {
-        engine.stubbedLicenseErrorCode = "LICENSE_EXPIRED"
+    fun `stop stops tracking`() = runTest {
         engine.stubbedStateMap = JSONObject().put("enabled", false)
         BackgroundGeolocation.stop()
         assertEquals(1, engine.stopTrackingCallCount)
     }
 
     @Test
-    fun `setConfig never consults the licence`() = runTest {
-        engine.stubbedLicenseErrorCode = "LICENSE_EXPIRED"
+    fun `setConfig applies the config`() = runTest {
         engine.stubbedStateMap = JSONObject().put("enabled", false)
         BackgroundGeolocation.setConfig(Config(debug = false))
         assertEquals(1, engine.appliedConfigs.size)
@@ -414,21 +378,8 @@ class FacadeLifecycleTest {
 
     // ---- onLocationError / locationErrors (C1) -----------------------------
     //
-    // Before this fix, a failing watchPosition (unlicensed build, or any
-    // failing tick) had no callback, no throw and no reachable event -
+    // Before this fix, a failing watchPosition tick had no callback, no throw and no reachable event -
     // `locationerror` had zero subscribers anywhere in the SDK.
-
-    @Test
-    fun `onLocationError decodes the license-gate shape`() {
-        var received: BGeoException? = null
-        BackgroundGeolocation.onLocationError { received = it }
-        engine.emit(
-            "locationerror",
-            JSONObject().put("code", "LICENSE_EXPIRED").put("message", "Tracking is not licensed"),
-        )
-        assertTrue(received is BGeoException.LicenseExpired)
-        assertEquals("LICENSE_EXPIRED", received?.code)
-    }
 
     @Test
     fun `onLocationError decodes the watchTick shape`() {
@@ -472,13 +423,13 @@ class FacadeLifecycleTest {
 
         engine.emit(
             "locationerror",
-            JSONObject().put("code", "LICENSE_EXPIRED").put("message", "Tracking is not licensed"),
+            JSONObject().put("code", "408").put("message", "Location request timed out"),
         )
 
         val error = received.poll(2, TimeUnit.SECONDS)
         assertTrue(
             "the locationerror event must reach a Flow subscriber, not be dropped in total silence",
-            error is BGeoException.LicenseExpired,
+            error is BGeoException.Unknown && error.code == "408",
         )
         job.cancelAndJoin()
     }

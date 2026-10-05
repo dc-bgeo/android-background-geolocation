@@ -3,7 +3,7 @@ package dev.bgeo.example.screens
 // Modal form for geofence CRUD. New fence: long-press on the map
 // (`GeofenceRequest(identifier = null)`, `MapScreen.kt`'s `onGeofenceRequest`
 // seam). Edit/delete: tap an existing fence's pin (`identifier` set). Every
-// change goes to the SDK first, then the snapshot is mirrored to the console
+// change goes to the SDK first, then the app store is refreshed
 // via `Geofences` (`Geofences.add`/`Geofences.remove`, both apply-before-
 // persist — see that file's header).
 //

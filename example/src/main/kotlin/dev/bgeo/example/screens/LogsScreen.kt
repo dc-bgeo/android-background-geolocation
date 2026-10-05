@@ -1,7 +1,6 @@
 package dev.bgeo.example.screens
 
-// Logs screen — the same event stream and formatting as the web console's
-// LogStream (ts / [LEVEL] / event / message / data), with a level filter,
+// Logs screen — ts / [LEVEL] / event / message / data lines, with a level filter,
 // follow-tail and clear. A Kotlin port of
 // `react-native/example/src/screens/LogsScreen.tsx`;
 // `ios/Example/Sources/Screens/LogsScreen.swift` is the same port for iOS.
@@ -225,7 +224,7 @@ private fun LogRow(line: LogLine, colors: ThemeColors) {
 
 /**
  * `LogsScreen.tsx`'s `levelColor`, sourced from the palette so both themes
- * stay readable — `info` takes the accent (not the web console's green) so
+ * stay readable — `info` takes the accent (not green) so
  * the level and the event ink stay distinguishable, matching the RN
  * comment. Kept in this file (not `LogsScreenLogic.kt`): it returns a
  * Compose `Color`, which this module's harness can't exercise in a JVM unit

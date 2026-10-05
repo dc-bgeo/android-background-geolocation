@@ -25,7 +25,6 @@ internal interface Engine {
 
     fun init(context: Context)
     fun resumeTrackingIfEnabled()
-    fun licenseErrorCode(): String?
     fun applyConfig(map: JSONObject?)
     fun stateMap(): JSONObject
     fun startTracking()
@@ -97,7 +96,6 @@ internal object LiveEngine : Engine {
 
     override fun init(context: Context) = BGGeoEngine.init(context)
     override fun resumeTrackingIfEnabled() = BGGeoEngine.resumeTrackingIfEnabled()
-    override fun licenseErrorCode(): String? = BGGeoEngine.licenseErrorCode()
     override fun applyConfig(map: JSONObject?) = BGGeoEngine.applyConfig(map)
     override fun stateMap(): JSONObject = BGGeoEngine.stateMap()
     override fun startTracking() = BGGeoEngine.startTracking()
